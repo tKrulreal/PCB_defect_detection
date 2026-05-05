@@ -111,7 +111,7 @@ Source: `runs/stage2/model_comparison/stage2_model_comparison.md`
 
 ### Example Demo Output
 
-![Demo annotated](demo_output/l_light_01_missing_hole_04_2_600_annotated.jpg)
+![Demo annotated](demo_output/l_light_01_missing_hole_18_3_600_annotated.jpg)
 
 ### YOLO Metrics (Stage 1)
 
