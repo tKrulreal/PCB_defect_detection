@@ -8,6 +8,7 @@ This is a 2-stage system for PCB defect detection and classification:
 
 - Pipeline Overview
 - Script and Folder Structure
+- Dataset
 - Installation
 - Quick Demo (drop images into folder)
 - Full Inference
@@ -40,6 +41,10 @@ This is a 2-stage system for PCB defect detection and classification:
 | `pcb-defect-cls/` | CNN dataset (images classified by type) |
 | `runs/` | Save train/eval/infer outputs and images |
 | `demo_stage12_one_image.py` | Quick demo script (drop image to test) |
+
+## Dataset
+
+- Kaggle: https://www.kaggle.com/datasets/norbertelter/pcb-defect-dataset
 
 ## Installation
 
