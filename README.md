@@ -141,6 +141,12 @@ To create confusion matrix images, use numpy/pandas + matplotlib to plot from th
 
 ## TensorBoard
 
+### TensorBoard Screenshot
+
+![TensorBoard overview](docs/tensorboard_overview.png)
+
+Add your screenshot at `docs/tensorboard_overview.png` (you can use the attached TensorBoard image).
+
 TensorBoard logs for Stage 2 are saved in:
 - `runs/stage2/resnet18/tensorboard/`
 - `runs/stage2/resnet50/tensorboard/`
