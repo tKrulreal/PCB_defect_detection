@@ -1,0 +1,32 @@
+{
+  "detection": {
+    "map50": 0.9919811288717836,
+    "precision": 0.9887771268136621,
+    "recall": 0.9930388338610788,
+    "precision_at_operating_point": 0.9786856127886323,
+    "recall_at_operating_point": 0.7659870250231696,
+    "tp": 1653,
+    "fp": 36,
+    "fn": 505,
+    "tp_localization_only": 1653,
+    "fp_localization_only": 36,
+    "fn_localization_only": 505
+  },
+  "classification": {
+    "accuracy_on_detected_boxes": 0.9661222020568663,
+    "macro_f1_on_detected_boxes": 0.96616542648494,
+    "num_detected_boxes": 1653
+  },
+  "system": {
+    "total_gt_boxes": 2158,
+    "total_predictions": 1689,
+    "correct_end_to_end": 1597,
+    "overall_accuracy": 0.7400370713623726,
+    "avg_latency_ms_per_image": 37.5396435394053,
+    "pipeline_errors": {
+      "false_positive_detection": 36,
+      "misclassification": 56,
+      "missed_detection": 505
+    }
+  }
+}

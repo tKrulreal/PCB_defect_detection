@@ -1,0 +1,39 @@
+{
+  "image_path": "demo_input\\l_light_01_missing_hole_18_3_600.jpg",
+  "image_size": {
+    "width": 600,
+    "height": 600
+  },
+  "predictions": [
+    {
+      "bbox": [
+        434,
+        522,
+        473,
+        558
+      ],
+      "stage1_class_id": 2,
+      "stage1_label": "missing_hole",
+      "stage1_confidence": 0.8605750203132629,
+      "stage2_class_id": 0,
+      "stage2_label": "missing_hole",
+      "stage2_confidence": 0.9580078125,
+      "combined_confidence": 0.8244375927024521
+    },
+    {
+      "bbox": [
+        80,
+        559,
+        114,
+        592
+      ],
+      "stage1_class_id": 2,
+      "stage1_label": "missing_hole",
+      "stage1_confidence": 0.8346810340881348,
+      "stage2_class_id": 0,
+      "stage2_label": "missing_hole",
+      "stage2_confidence": 0.95751953125,
+      "combined_confidence": 0.7992233925033361
+    }
+  ]
+}

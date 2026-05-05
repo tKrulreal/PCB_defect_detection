@@ -1,0 +1,6 @@
+best_epoch=10
+best_val_acc=0.999538
+best_val_macro_f1=0.999544
+test_loss=0.245389
+test_acc=0.998146
+test_macro_f1=0.998140

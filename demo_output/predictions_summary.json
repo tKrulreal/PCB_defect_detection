@@ -1,0 +1,65 @@
+[
+  {
+    "image_path": "demo_input\\l_light_01_missing_hole_18_3_600.jpg",
+    "image_size": {
+      "width": 600,
+      "height": 600
+    },
+    "predictions": [
+      {
+        "bbox": [
+          434,
+          522,
+          473,
+          558
+        ],
+        "stage1_class_id": 2,
+        "stage1_label": "missing_hole",
+        "stage1_confidence": 0.8605750203132629,
+        "stage2_class_id": 0,
+        "stage2_label": "missing_hole",
+        "stage2_confidence": 0.9580078125,
+        "combined_confidence": 0.8244375927024521
+      },
+      {
+        "bbox": [
+          80,
+          559,
+          114,
+          592
+        ],
+        "stage1_class_id": 2,
+        "stage1_label": "missing_hole",
+        "stage1_confidence": 0.8346810340881348,
+        "stage2_class_id": 0,
+        "stage2_label": "missing_hole",
+        "stage2_confidence": 0.95751953125,
+        "combined_confidence": 0.7992233925033361
+      }
+    ]
+  },
+  {
+    "image_path": "demo_input\\l_light_01_spurious_copper_16_3_600.jpg",
+    "image_size": {
+      "width": 600,
+      "height": 600
+    },
+    "predictions": [
+      {
+        "bbox": [
+          401,
+          75,
+          439,
+          94
+        ],
+        "stage1_class_id": 5,
+        "stage1_label": "spurious_copper",
+        "stage1_confidence": 0.8437053561210632,
+        "stage2_class_id": 4,
+        "stage2_label": "spur",
+        "stage2_confidence": 0.93310546875,
+        "combined_confidence": 0.7872660818102304
+      }
+    ]
+  }
+]

@@ -1,0 +1,41 @@
+[
+  {
+    "image_path": "D:\\python\\PCB\\pcb-defect-dataset\\test\\images\\l_light_01_missing_hole_04_2_600.jpg",
+    "image_size": {
+      "width": 600,
+      "height": 600
+    },
+    "predictions": [
+      {
+        "bbox": [
+          141,
+          235,
+          173,
+          273
+        ],
+        "stage1_class_id": 2,
+        "stage1_label": "missing_hole",
+        "stage1_confidence": 0.8672439455986023,
+        "stage2_class_id": 0,
+        "stage2_label": "missing_hole",
+        "stage2_confidence": 0.95947265625,
+        "combined_confidence": 0.8320968521002214
+      },
+      {
+        "bbox": [
+          214,
+          75,
+          244,
+          113
+        ],
+        "stage1_class_id": 2,
+        "stage1_label": "missing_hole",
+        "stage1_confidence": 0.8585819005966187,
+        "stage2_class_id": 0,
+        "stage2_label": "missing_hole",
+        "stage2_confidence": 0.955078125,
+        "combined_confidence": 0.8200127917807549
+      }
+    ]
+  }
+]
