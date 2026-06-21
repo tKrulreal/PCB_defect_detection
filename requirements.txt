@@ -1,10 +1,27 @@
-numpy
-opencv-python
-pillow
-torch
-torchvision
-ultralytics
-pyyaml
-scikit-learn
-tqdm
+# Core dependencies
+numpy>=1.24.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics>=8.0.0
+pyyaml>=6.0
+scikit-learn>=1.3.0
+tqdm>=4.65.0
 
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+pandas>=2.0.0
+
+# Evaluation (Hungarian matching)
+scipy>=1.11.0
+
+# TensorBoard
+tensorboard>=2.14.0
+
+# Web application
+streamlit>=1.28.0
+
+# Testing
+pytest>=7.4.0

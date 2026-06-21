@@ -1,157 +1,33 @@
+"""End-to-end evaluation of the YOLO Stage 1 + CNN Stage 2 pipeline.
+
+Runs the full inference pipeline on a dataset split, matches predictions to
+ground-truth annotations, and computes detection + classification metrics.
+Uses **Hungarian (optimal) matching** for prediction-to-GT assignment.
+"""
+
 import argparse
 import csv
 import json
 import time
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-import yaml
 from sklearn.metrics import accuracy_score, classification_report, f1_score
 from tqdm.auto import tqdm
 
 from stage12_yolo_cnn_system import DEFAULT_CNN_PATH, DEFAULT_YOLO_PATH, Stage12Pipeline
-
-
-def load_dataset_config(data_yaml_path):
-    data_yaml_path = Path(data_yaml_path)
-    data = yaml.safe_load(data_yaml_path.read_text(encoding="utf-8"))
-
-    dataset_root = Path(data["path"])
-    if not dataset_root.is_absolute():
-        dataset_root = (data_yaml_path.parent / dataset_root).resolve()
-
-    names = data["names"]
-    if isinstance(names, dict):
-        class_names = [names[index] for index in sorted(names.keys())]
-    else:
-        class_names = list(names)
-
-    return dataset_root, data, class_names
-
-
-def resolve_split_dirs(dataset_root, split_value):
-    split_path = Path(split_value)
-    if not split_path.is_absolute():
-        split_path = (dataset_root / split_path).resolve()
-
-    if split_path.name == "images":
-        return split_path, split_path.parent / "labels"
-
-    return split_path / "images", split_path / "labels"
-
-
-def canonicalize_stem(stem):
-    prefix, separator, suffix = stem.rpartition("_")
-    if separator and suffix.isdigit():
-        return prefix
-    return stem
-
-
-def extract_size_suffix(stem):
-    prefix, separator, suffix = stem.rpartition("_")
-    if separator and suffix.isdigit():
-        return int(suffix)
-    return -1
-
-
-def build_label_index(labels_dir):
-    exact_map = {}
-    fallback_map = defaultdict(list)
-
-    for label_path in sorted(labels_dir.glob("*.txt")):
-        exact_map[label_path.stem] = label_path
-        fallback_map[canonicalize_stem(label_path.stem)].append(label_path)
-
-    for candidates in fallback_map.values():
-        candidates.sort(key=lambda path: (extract_size_suffix(path.stem), path.name), reverse=True)
-
-    return exact_map, fallback_map
-
-
-def find_label_file(image_stem, exact_map, fallback_map):
-    exact_match = exact_map.get(image_stem)
-    if exact_match is not None:
-        return exact_match
-
-    candidates = fallback_map.get(canonicalize_stem(image_stem), [])
-    if candidates:
-        return candidates[0]
-
-    return None
-
-
-def yolo_line_to_xyxy(line, image_width, image_height):
-    parts = line.strip().split()
-    cls_id = int(float(parts[0]))
-    x_center = float(parts[1]) * image_width
-    y_center = float(parts[2]) * image_height
-    box_width = float(parts[3]) * image_width
-    box_height = float(parts[4]) * image_height
-
-    x1 = x_center - box_width / 2
-    y1 = y_center - box_height / 2
-    x2 = x_center + box_width / 2
-    y2 = y_center + box_height / 2
-    return cls_id, [x1, y1, x2, y2]
-
-
-def compute_iou(box_a, box_b):
-    ax1, ay1, ax2, ay2 = box_a
-    bx1, by1, bx2, by2 = box_b
-
-    inter_x1 = max(ax1, bx1)
-    inter_y1 = max(ay1, by1)
-    inter_x2 = min(ax2, bx2)
-    inter_y2 = min(ay2, by2)
-
-    inter_w = max(0.0, inter_x2 - inter_x1)
-    inter_h = max(0.0, inter_y2 - inter_y1)
-    inter_area = inter_w * inter_h
-
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    union = area_a + area_b - inter_area
-    if union <= 0:
-        return 0.0
-    return inter_area / union
-
-
-def match_predictions(predictions, ground_truths, iou_threshold, class_aware=False):
-    matches = []
-    unmatched_pred_indices = []
-    unmatched_gt_indices = set(range(len(ground_truths)))
-
-    sorted_pred_indices = sorted(
-        range(len(predictions)),
-        key=lambda index: predictions[index]["stage1_confidence"],
-        reverse=True,
-    )
-
-    for pred_index in sorted_pred_indices:
-        prediction = predictions[pred_index]
-        best_gt_index = None
-        best_iou = 0.0
-
-        for gt_index in unmatched_gt_indices:
-            gt = ground_truths[gt_index]
-            if class_aware and prediction["stage1_label"] != gt["label"]:
-                continue
-            iou = compute_iou(prediction["bbox"], gt["bbox"])
-            if iou > best_iou:
-                best_iou = iou
-                best_gt_index = gt_index
-
-        if best_gt_index is not None and best_iou >= iou_threshold:
-            matches.append((pred_index, best_gt_index, best_iou))
-            unmatched_gt_indices.remove(best_gt_index)
-        else:
-            unmatched_pred_indices.append(pred_index)
-
-    return matches, unmatched_pred_indices, sorted(unmatched_gt_indices)
+from utils import (
+    build_label_index,
+    find_by_stem,
+    load_dataset_config,
+    match_predictions,
+    resolve_split_dirs,
+    yolo_line_to_xyxy,
+)
 
 
 def run_yolo_val(pipeline, data_yaml, split, imgsz):
+    """Run YOLO built-in validation and return mAP/precision/recall dict."""
     metrics = pipeline.detector.val(
         data=str(data_yaml),
         split=split,
@@ -178,11 +54,25 @@ def run_yolo_val(pipeline, data_yaml, split, imgsz):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate full YOLO Stage 1 + CNN Stage 2 system")
-    parser.add_argument("--data", default="pcb-defect-dataset/data.yaml", help="Path to dataset YAML")
-    parser.add_argument("--split", default="test", choices=["train", "val", "test"], help="Dataset split to evaluate")
-    parser.add_argument("--yolo", default=str(DEFAULT_YOLO_PATH), help="Path to YOLO checkpoint")
-    parser.add_argument("--cnn", default=str(DEFAULT_CNN_PATH), help="Path to Stage 2 CNN checkpoint")
+    parser = argparse.ArgumentParser(
+        description="Evaluate full YOLO Stage 1 + CNN Stage 2 system"
+    )
+    parser.add_argument(
+        "--data", default="pcb-defect-dataset/data.yaml",
+        help="Path to dataset YAML",
+    )
+    parser.add_argument(
+        "--split", default="test", choices=["train", "val", "test"],
+        help="Dataset split to evaluate",
+    )
+    parser.add_argument(
+        "--yolo", default=str(DEFAULT_YOLO_PATH),
+        help="Path to YOLO checkpoint",
+    )
+    parser.add_argument(
+        "--cnn", default=str(DEFAULT_CNN_PATH),
+        help="Path to Stage 2 CNN checkpoint",
+    )
     parser.add_argument("--imgsz", type=int, default=768, help="YOLO inference image size")
     parser.add_argument("--conf", type=float, default=0.25, help="YOLO confidence threshold")
     parser.add_argument("--iou", type=float, default=0.7, help="YOLO NMS IoU threshold")
@@ -217,6 +107,7 @@ def main():
     if not image_paths:
         raise FileNotFoundError(f"No images found in {images_dir}")
 
+    # ---- Accumulators ----
     detection_tp = 0
     detection_fp = 0
     detection_fn = 0
@@ -238,7 +129,7 @@ def main():
         prediction = pipeline.predict_image(image_path)
         total_latency_ms += (time.perf_counter() - start_time) * 1000.0
 
-        label_path = find_label_file(image_path.stem, label_exact_map, label_fallback_map)
+        label_path = find_by_stem(image_path.stem, label_exact_map, label_fallback_map)
         if label_path is None or not label_path.exists():
             raise FileNotFoundError(f"Missing label file for {image_path.name}")
 
@@ -259,11 +150,13 @@ def main():
                 }
             )
 
+        # Localization-only matching (class-agnostic)
         matches, unmatched_pred_indices, unmatched_gt_indices = match_predictions(
             prediction["predictions"],
             ground_truths,
             iou_threshold=args.match_iou,
         )
+        # Class-aware matching
         det_matches, det_unmatched_pred_indices, det_unmatched_gt_indices = match_predictions(
             prediction["predictions"],
             ground_truths,
@@ -338,11 +231,24 @@ def main():
             system_acc=f"{running_system_acc:.4f}",
         )
 
-    classification_acc = accuracy_score(classification_y_true, classification_y_pred) if classification_y_true else 0.0
-    classification_f1 = f1_score(classification_y_true, classification_y_pred, average="macro") if classification_y_true else 0.0
+    # ---- Compute final metrics ----
+    classification_acc = (
+        accuracy_score(classification_y_true, classification_y_pred)
+        if classification_y_true else 0.0
+    )
+    classification_f1 = (
+        f1_score(classification_y_true, classification_y_pred, average="macro")
+        if classification_y_true else 0.0
+    )
     system_accuracy = system_correct / total_gt if total_gt else 0.0
-    det_precision_at_conf = detection_class_tp / (detection_class_tp + detection_class_fp) if (detection_class_tp + detection_class_fp) else 0.0
-    det_recall_at_conf = detection_class_tp / (detection_class_tp + detection_class_fn) if (detection_class_tp + detection_class_fn) else 0.0
+    det_precision_at_conf = (
+        detection_class_tp / (detection_class_tp + detection_class_fp)
+        if (detection_class_tp + detection_class_fp) else 0.0
+    )
+    det_recall_at_conf = (
+        detection_class_tp / (detection_class_tp + detection_class_fn)
+        if (detection_class_tp + detection_class_fn) else 0.0
+    )
     avg_latency_ms = total_latency_ms / len(image_paths)
 
     classification_report_text = classification_report(
@@ -394,6 +300,7 @@ def main():
             f"- Split: `{args.split}`",
             f"- YOLO checkpoint: `{args.yolo}`",
             f"- CNN checkpoint: `{args.cnn}`",
+            f"- Matching algorithm: **Hungarian (optimal)**",
             "",
             "## Detection",
             "",
@@ -428,9 +335,15 @@ def main():
 
     print(markdown_report)
 
-    (save_dir / "system_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    (save_dir / "system_report.md").write_text(markdown_report + "\n", encoding="utf-8")
-    (save_dir / "classification_report.txt").write_text(classification_report_text, encoding="utf-8")
+    (save_dir / "system_summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
+    )
+    (save_dir / "system_report.md").write_text(
+        markdown_report + "\n", encoding="utf-8"
+    )
+    (save_dir / "classification_report.txt").write_text(
+        classification_report_text, encoding="utf-8"
+    )
 
     if pipeline_errors:
         with open(save_dir / "pipeline_errors.csv", "w", newline="", encoding="utf-8") as file:
