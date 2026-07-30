@@ -66,7 +66,10 @@ Hệ thống phát hiện và phân loại lỗi PCB sử dụng pipeline 2 giai
 | File | Mô tả |
 | --- | --- |
 | `demo_stage12_one_image.py` | Quick demo — thả ảnh vào `demo_input/` |
-| `app.py` | **Streamlit web application** — upload ảnh, xem kết quả trực quan trên trình duyệt |
+| `app.py` | **Streamlit web application** — UI với 4 tab (Detector / Gallery / Performance / About) |
+| `before_after_slider.py` | **Before/After image comparison** — HTML/JS slider tự build (zero deps) |
+| `gradcam_ui.py` | **Per-crop GradCAM helpers** cho web app, có cache cho GradCAM instance |
+| `.streamlit/config.toml` | Theme dark + max upload size (50MB) |
 | `main.py` | **CLI entry point** — điểm vào duy nhất cho mọi chức năng |
 
 ### Testing & Config
@@ -257,7 +260,7 @@ python main.py gradcam --input pcb-defect-cls/test/mouse_bite/ --cnn runs/stage2
 
 ## Web Application
 
-Giao diện web Streamlit cho phép upload ảnh PCB và xem kết quả trực quan:
+Giao diện web Streamlit dark-theme với 4 tab cho phép upload ảnh PCB, xem kết quả trực quan, và khảo sát performance của model:
 
 ```powershell
 python main.py app
@@ -267,14 +270,21 @@ streamlit run app.py
 
 Mở trình duyệt → `http://localhost:8501`
 
-**Tính năng:**
-- Upload nhiều ảnh cùng lúc (JPG, PNG, BMP)
-- Chọn CNN model (ResNet18, ResNet50, EfficientNet-B2)
-- Điều chỉnh confidence/IoU threshold
-- Xem ảnh gốc vs ảnh annotated song song
-- Bảng chi tiết từng defect với color-coded badges
-- Summary dashboard: metric cards + bar chart
-- Download kết quả JSON
+**4 tab chính:**
+
+| Tab | Tính năng |
+| --- | --- |
+| 🔍 **Detector** | Deep inspection cho 1 ảnh: Before/After slider kéo qua lại giữa ảnh gốc & ảnh detected, GradCAM heatmap cho từng detection (3 panel: Crop / Heatmap / Overlay), bảng chi tiết defect với color-coded badges, JSON download. |
+| 🖼 **Gallery** | Upload nhiều ảnh cùng lúc. 3 layout: Grid 3-cột, Side-by-side, Compact list. Cross-image pivot table, summary metrics (images / total defects / avg confidence / defect types), bar chart, JSON download cho toàn bộ. |
+| 📊 **Model Performance** | 3 sub-tab: **Error Analysis** (8 PNG từ `error_analysis.py` cho từng CNN model), **GradCAM samples** (5 PNG pre-generated trong `runs/gradcam/`), **Reports** (markdown error-analysis report). |
+| ℹ️ **About** | Mô tả pipeline, danh sách 6 defect class với badges, tips sử dụng, project layout. |
+
+**Sidebar config:**
+- Chọn CNN architecture: ResNet18 / ResNet50 / EfficientNet-B2
+- Điều chỉnh confidence/IoU threshold + image size
+- Toggle hiển thị GradCAM & Before/After slider
+
+**Demo samples:** Click "Try a sample" ở tab Detector để load ngay 1 trong 5 ảnh mẫu có sẵn trong `demo_input/`.
 
 ## Testing
 
