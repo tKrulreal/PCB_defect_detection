@@ -596,7 +596,7 @@ with tab_detector:
                 if st.button(
                     f"📷 {sample.stem[:24]}",
                     key=f"demo_load_{i}",
-                    use_container_width=True,
+                    width="stretch",
                     help=f"Load {sample.name}",
                 ):
                     st.session_state["detector_upload"] = str(sample)
@@ -646,10 +646,10 @@ with tab_detector:
                 col_o, col_a = st.columns(2)
                 with col_o:
                     st.markdown("**Original**")
-                    st.image(original_rgb, use_container_width=True)
+                    st.image(original_rgb, width="stretch")
                 with col_a:
                     st.markdown("**Detections**")
-                    st.image(annotated_rgb, use_container_width=True)
+                    st.image(annotated_rgb, width="stretch")
 
             if preds:
                 # Results table
@@ -663,7 +663,7 @@ with tab_detector:
                     }
                     for p in preds
                 ]
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
                 # Defect badges
                 badges = " ".join(
@@ -700,7 +700,7 @@ with tab_detector:
                                     )
                                     st.image(
                                         cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
-                                        use_container_width=True,
+                                        width="stretch",
                                     )
                                 with cols[1]:
                                     st.markdown(
@@ -710,7 +710,7 @@ with tab_detector:
                                     if gradcam_out.get("cam") is not None:
                                         st.image(
                                             gradcam_out["cam"],
-                                            use_container_width=True,
+                                            width="stretch",
                                             clamp=True,
                                         )
                                     else:
@@ -723,7 +723,7 @@ with tab_detector:
                                     if gradcam_out.get("overlay") is not None:
                                         st.image(
                                             gradcam_out["overlay"],
-                                            use_container_width=True,
+                                            width="stretch",
                                         )
             else:
                 st.success("✅ No defects detected — board looks clean!")
@@ -824,7 +824,7 @@ with tab_gallery:
                             f'<div class="gallery-sub">{n_pred} detection(s)</div>',
                             unsafe_allow_html=True,
                         )
-                        st.image(res["_annotated_rgb"], use_container_width=True)
+                        st.image(res["_annotated_rgb"], width="stretch")
                         if n_pred:
                             badges = " ".join(
                                 f'<span class="defect-badge defect-{_defect_css_class(p["stage2_label"])}">'
@@ -839,10 +839,10 @@ with tab_gallery:
                 c1, c2 = st.columns(2)
                 with c1:
                     st.markdown("**Original**")
-                    st.image(res["_original_rgb"], use_container_width=True)
+                    st.image(res["_original_rgb"], width="stretch")
                 with c2:
                     st.markdown("**Detected**")
-                    st.image(res["_annotated_rgb"], use_container_width=True)
+                    st.image(res["_annotated_rgb"], width="stretch")
                 st.markdown(
                     f"**{res['_uploaded_name']}** — {len(res['predictions'])} detection(s)",
                 )
@@ -862,7 +862,7 @@ with tab_gallery:
                 ):
                     c1, c2 = st.columns([1, 2])
                     with c1:
-                        st.image(res["_annotated_rgb"], use_container_width=True)
+                        st.image(res["_annotated_rgb"], width="stretch")
                     with c2:
                         if res["predictions"]:
                             df = pd.DataFrame(
@@ -876,7 +876,7 @@ with tab_gallery:
                                     for p in res["predictions"]
                                 ]
                             )
-                            st.dataframe(df, use_container_width=True, hide_index=True)
+                            st.dataframe(df, width="stretch", hide_index=True)
                         else:
                             st.success("No defects detected.")
 
@@ -927,7 +927,7 @@ with tab_gallery:
                 .sort_values("Count", ascending=False)
             )
             chart_df.index.name = "Defect Type"
-            st.bar_chart(chart_df, use_container_width=True)
+            st.bar_chart(chart_df, width="stretch")
 
             # Cross-image pivot
             rows = []
@@ -949,7 +949,7 @@ with tab_gallery:
                     .size()
                     .unstack(fill_value=0)
                 )
-                st.dataframe(pivot, use_container_width=True)
+                st.dataframe(pivot, width="stretch")
 
         # JSON download for all results
         clean = [{k: v for k, v in r.items() if not k.startswith("_")} for r in all_results]
@@ -1014,7 +1014,7 @@ with tab_perf:
             else:
                 for png in pngs:
                     st.markdown(f"**{png.stem.replace('_', ' ').title()}**")
-                    st.image(str(png), use_container_width=True)
+                    st.image(str(png), width="stretch")
                     st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
 
     with sub_tabs[1]:
@@ -1033,7 +1033,7 @@ with tab_perf:
                             f'<div class="gallery-title">{png.stem}</div>',
                             unsafe_allow_html=True,
                         )
-                        st.image(str(png), use_container_width=True)
+                        st.image(str(png), width="stretch")
                         st.markdown("</div>", unsafe_allow_html=True)
 
     with sub_tabs[2]:
