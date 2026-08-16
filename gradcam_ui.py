@@ -48,19 +48,20 @@ STAGE2_CLASSES = (
 # ---------------------------------------------------------------------------
 
 @st.cache_resource(show_spinner=False)
-def get_gradcam_for_bundle(_bundle_id: int, bundle: dict) -> Optional[GradCAM]:
-    """Return a long-lived :class:`GradCAM` instance for *bundle*.
+def get_gradcam_for_bundle(_bundle_id: int, _bundle: dict) -> Optional[GradCAM]:
+    """Return a long-lived :class:`GradCAM` instance for *_bundle*.
 
-    The first arg is a coarse ``id(bundle)`` to defeat Streamlit's cache
-    equality check (the bundle contains non-hashable tensors).  The GradCAM
-    hooks attach to ``bundle["model"]``, so a fresh helper is required when
-    the user switches CNN checkpoints.
+    Both args are prefixed with underscore so Streamlit skips hashing.
+    ``_bundle_id`` is a coarse ``id(bundle)`` used to bust the cache when
+    the user switches CNN checkpoints (the bundle contains non-hashable
+    tensors). The GradCAM hooks attach to ``_bundle["model"]``, so a fresh
+    helper is required when the checkpoint changes.
     """
     try:
-        target_layer = _get_target_layer(bundle["model"], bundle["model_name"])
+        target_layer = _get_target_layer(_bundle["model"], _bundle["model_name"])
     except ValueError:
         return None
-    return GradCAM(bundle["model"], target_layer)
+    return GradCAM(_bundle["model"], target_layer)
 
 
 # ---------------------------------------------------------------------------

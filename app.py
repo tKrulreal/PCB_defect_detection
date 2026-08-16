@@ -1481,9 +1481,15 @@ with tab_detector:
                                         )
                                         st.markdown("</div>", unsafe_allow_html=True)
             else:
-                st.success(
-                    f"{_icon('ok', 14, color='#34d399')} "
-                    f"No defects detected. Board looks clean."
+                st.markdown(
+                    f'<div style="display:flex; align-items:center; gap:.5rem; '
+                    f'padding:.7rem 1rem; background:rgba(52,211,153,0.10); '
+                    f'border:1px solid rgba(52,211,153,0.28); border-radius:10px; '
+                    f'color:var(--accent-soft); font-weight:500;">'
+                    f'{_icon("ok", 14, color="#34d399")}'
+                    f'<span>No defects detected. Board looks clean.</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
 
             st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)

@@ -1,0 +1,12 @@
+                 precision    recall  f1-score   support
+
+     mouse_bite     0.9962    0.9924    0.9943       262
+           spur     0.8932    0.9928    0.9404       278
+   missing_hole     1.0000    1.0000    1.0000       283
+          short     0.9963    0.9963    0.9963       273
+   open_circuit     1.0000    0.9962    0.9981       263
+spurious_copper     0.9887    0.8912    0.9374       294
+
+       accuracy                         0.9770      1653
+      macro avg     0.9791    0.9781    0.9777      1653
+   weighted avg     0.9788    0.9770    0.9770      1653
