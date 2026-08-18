@@ -1,0 +1,2166 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>PCB Defect Detection & Fine-Grained Classification — Hybrid YOLOv8 + CNN + XAI</title>
+
+  <!-- Reveal.js CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/theme/black.min.css" id="theme">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/monokai.min.css">
+
+  <!-- KaTeX CSS for LaTeX Math Formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+
+  <!-- Font Awesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Google Fonts: Inter, Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            obsidian: '#0A0F1D',
+            darkSurface: '#111827',
+            cardBg: '#1E293B',
+            cyanAccent: '#38BDF8',
+            indigoAccent: '#6366F1',
+            emeraldAccent: '#10B981',
+            roseAccent: '#F43F5E',
+            amberAccent: '#F59E0B',
+            // 6 Defect Classes specific colors
+            defectMissingHole: '#EF4444',
+            defectMouseBite: '#F97316',
+            defectOpenCircuit: '#EAB308',
+            defectShort: '#22C55E',
+            defectSpur: '#3B82F6',
+            defectSpuriousCopper: '#A855F7',
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Global Base Reset & Custom Theme — NO SCROLLBARS STRICTLY ENFORCED */
+    :root {
+      --bg-deep: #0A0F1D;
+      --card-bg: rgba(17, 24, 39, 0.75);
+      --card-border: rgba(56, 189, 248, 0.16);
+      --card-hover-border: rgba(56, 189, 248, 0.45);
+      --cyan: #38BDF8;
+      --indigo: #6366F1;
+      --emerald: #10B981;
+      --rose: #F43F5E;
+      --amber: #F59E0B;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      scrollbar-width: none !important; /* Firefox */
+      -ms-overflow-style: none !important; /* IE/Edge */
+    }
+
+    *::-webkit-scrollbar {
+      display: none !important; /* Chrome, Safari, Edge */
+      width: 0px !important;
+      height: 0px !important;
+      background: transparent !important;
+    }
+
+    html, body {
+      background-color: var(--bg-deep) !important;
+      color: #F3F4F6 !important;
+      font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+      overflow: hidden !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+    }
+
+    .reveal {
+      background: radial-gradient(circle at 50% 20%, #172554 0%, #0A0F1D 60%, #030712 100%) !important;
+      color: #E2E8F0 !important;
+      font-size: 21px;
+      overflow: hidden !important;
+    }
+
+    .reveal .slides {
+      text-align: left;
+      overflow: hidden !important;
+    }
+
+    .reveal .slides section {
+      padding: 16px 28px !important;
+      height: 100% !important;
+      max-height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+    }
+
+    /* Glassmorphism Cards */
+    .glass-card {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      box-shadow: 0 6px 24px 0 rgba(0, 0, 0, 0.35);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+    .glass-card:hover {
+      border-color: var(--card-hover-border);
+      box-shadow: 0 10px 32px 0 rgba(56, 189, 248, 0.15);
+      transform: translateY(-1.5px);
+    }
+
+    .glass-card-sm {
+      background: rgba(30, 41, 59, 0.6);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    /* Gradient Text */
+    .text-gradient-cyan {
+      background: linear-gradient(135deg, #38BDF8 0%, #818CF8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .text-gradient-gold {
+      background: linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .text-gradient-emerald {
+      background: linear-gradient(135deg, #34D399 0%, #10B981 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Terminal Mac Window */
+    .mac-terminal {
+      background: #090D16;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 9px;
+      overflow: hidden !important;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    .mac-header {
+      background: #131B2E;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .mac-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .mac-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+    }
+    .mac-dot.red { background: #EF4444; }
+    .mac-dot.yellow { background: #F59E0B; }
+    .mac-dot.green { background: #10B981; }
+
+    /* Custom Code Styling */
+    pre code {
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 11.5px !important;
+      line-height: 1.4 !important;
+      padding: 10px 12px !important;
+      background: transparent !important;
+      overflow: hidden !important;
+    }
+
+    /* Custom Table Styling */
+    .tech-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 0.78rem;
+    }
+    .tech-table th {
+      background: rgba(30, 41, 59, 0.85);
+      color: #38BDF8;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 6px 10px;
+      border-bottom: 2px solid rgba(56, 189, 248, 0.3);
+    }
+    .tech-table td {
+      padding: 5px 10px;
+      background: rgba(17, 24, 39, 0.6);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: #E2E8F0;
+    }
+    .tech-table tr:hover td {
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    /* Subtle grid background pattern */
+    .circuit-grid {
+      background-size: 32px 32px;
+      background-image: 
+        linear-gradient(to right, rgba(56, 189, 248, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
+    }
+
+    /* Interactive Before/After Comparison Slider */
+    .comparison-slider-container {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      overflow: hidden;
+      border-radius: 10px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      user-select: none;
+      cursor: ew-resize;
+    }
+    .slider-img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #0D1322;
+    }
+    .slider-img-top {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 50%;
+      overflow: hidden;
+      border-right: 2px solid #38BDF8;
+      z-index: 2;
+    }
+    .slider-img-top img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: auto;
+      min-width: 100%;
+      object-fit: contain;
+    }
+    .slider-handle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: #38BDF8;
+      color: #0A0F1D;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.8);
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    /* Floating Navigation Controls */
+    #deck-controls {
+      position: fixed;
+      bottom: 18px;
+      right: 22px;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(10, 15, 29, 0.85);
+      backdrop-filter: blur(12px);
+      padding: 6px 14px;
+      border-radius: 30px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .deck-btn {
+      background: transparent;
+      border: none;
+      color: #94A3B8;
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .deck-btn:hover {
+      color: #38BDF8;
+      background: rgba(56, 189, 248, 0.12);
+    }
+    .deck-btn.active {
+      color: #38BDF8;
+      font-weight: 700;
+    }
+
+    /* Badge Tags */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .badge-cyan { background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .badge-indigo { background: rgba(99, 102, 241, 0.15); color: #818CF8; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .badge-emerald { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-rose { background: rgba(244, 63, 94, 0.15); color: #FB7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+
+    /* Custom Header Subtitles */
+    .slide-header {
+      margin-bottom: 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 10px;
+    }
+    .slide-section-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: #38BDF8;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .slide-title {
+      font-size: 1.65rem;
+      font-weight: 800;
+      color: #F8FAFC;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      margin: 4px 0 0 0;
+    }
+
+    /* Glow box animation */
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); }
+      50% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.45); }
+    }
+    .glow-pulse {
+      animation: pulseGlow 4s infinite ease-in-out;
+    }
+
+    /* Keyboard Help Modal */
+    #shortcuts-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 10000;
+      backdrop-filter: blur(8px);
+      align-items: center;
+      justify-content: center;
+    }
+    #shortcuts-modal.open {
+      display: flex;
+    }
+  </style>
+</head>
+
+<body class="circuit-grid">
+
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 1: HERO TITLE SLIDE -->
+      <!-- ========================================================================= -->
+      <section data-transition="fade">
+        <div class="h-full flex flex-col justify-between py-2">
+          
+          <!-- Top Badge & University Tag -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="badge badge-cyan"><i class="fa-solid fa-microchip mr-1"></i> ĐỒ ÁN TỐT NGHIỆP / AI FOR INDUSTRY 4.0</span>
+              <span class="badge badge-indigo"><i class="fa-solid fa-graduation-cap mr-1"></i> BÁCH KHOA HÀ NỘI - HUST</span>
+            </div>
+            <div class="text-xs font-mono text-slate-400 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span class="text-emerald-400 font-semibold">PRODUCTION-READY SYSTEM</span>
+            </div>
+          </div>
+
+          <!-- Main Hero Title Area -->
+          <div class="my-auto py-3">
+            <h1 class="text-3xl lg:text-4xl font-extrabold tracking-tight text-white leading-tight mb-2">
+              HỆ THỐNG PHÁT HIỆN & PHÂN LOẠI LỖI BO MẠCH IN (PCB)<br>
+              <span class="text-gradient-cyan">HYBRID YOLOv8 + CNN KẾT HỢP XAI GRAD-CAM</span>
+            </h1>
+            <p class="text-base font-normal text-slate-300 max-w-4xl leading-relaxed mb-4">
+              <span class="italic text-slate-400 font-mono text-xs">Automated Industrial PCB Defect Inspection: Two-Stage Deep Learning Pipeline with Fine-Grained Refinement & Visual Interpretability</span>
+            </p>
+
+            <!-- Author & Metadata Block -->
+            <div class="flex flex-wrap items-center gap-6 p-4 rounded-xl bg-slate-900/80 border border-cyan-500/20 max-w-3xl">
+              <div class="flex items-center gap-3 pr-6 border-r border-slate-700">
+                <div class="w-11 h-11 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-bold text-lg text-white shadow-lg shadow-cyan-500/30">
+                  <i class="fa-solid fa-user-astronaut"></i>
+                </div>
+                <div>
+                  <div class="text-xs text-slate-400 uppercase font-mono">Sinh viên thực hiện</div>
+                  <div class="text-base font-bold text-white">Nguyễn Duy Khương</div>
+                  <div class="text-xs text-cyan-400 font-mono">MSSV: 11236134</div>
+                </div>
+              </div>
+              <div class="flex flex-col gap-1">
+                <div class="text-xs text-slate-400 uppercase font-mono">Đơn vị đào tạo</div>
+                <div class="text-sm font-semibold text-slate-200">Trường CNTT & TT — ĐH Bách Khoa Hà Nội</div>
+                <div class="text-xs text-indigo-300">Chuyên ngành: Khoa học Máy tính & Trí tuệ Nhân tạo</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 Glowing Key Metric Cards -->
+          <div class="grid grid-cols-4 gap-4 mt-2">
+            <div class="glass-card p-3.5 border-l-4 border-l-cyan-400 glow-pulse">
+              <div class="text-xs font-mono text-slate-400 uppercase">Stage 1 Localization</div>
+              <div class="text-2xl font-black text-cyan-400 tracking-tight">99.46%</div>
+              <div class="text-xs text-slate-300 mt-1 font-medium"><i class="fa-solid fa-bullseye text-cyan-400 mr-1"></i> mAP@50 (YOLOv8m)</div>
+            </div>
+
+            <div class="glass-card p-3.5 border-l-4 border-l-emerald-400">
+              <div class="text-xs font-mono text-slate-400 uppercase">Stage 2 Refinement</div>
+              <div class="text-2xl font-black text-emerald-400 tracking-tight">98.79% - 100%</div>
+              <div class="text-xs text-slate-300 mt-1 font-medium"><i class="fa-solid fa-filter text-emerald-400 mr-1"></i> Crop Classification Acc</div>
+            </div>
+
+            <div class="glass-card p-3.5 border-l-4 border-l-indigo-400">
+              <div class="text-xs font-mono text-slate-400 uppercase">End-to-End System</div>
+              <div class="text-2xl font-black text-indigo-400 tracking-tight">75.67%</div>
+              <div class="text-xs text-slate-300 mt-1 font-medium"><i class="fa-solid fa-code-compare text-indigo-400 mr-1"></i> Hungarian Matching (IoU≥0.5)</div>
+            </div>
+
+            <div class="glass-card p-3.5 border-l-4 border-l-amber-400">
+              <div class="text-xs font-mono text-slate-400 uppercase">Industrial Coverage</div>
+              <div class="text-2xl font-black text-amber-400 tracking-tight">6 / 6 Classes</div>
+              <div class="text-xs text-slate-300 mt-1 font-medium"><i class="fa-solid fa-eye text-amber-400 mr-1"></i> XAI Grad-CAM Transparent</div>
+            </div>
+          </div>
+
+          <!-- Bottom Tech Badges -->
+          <div class="flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-2 mt-1">
+            <div class="flex items-center gap-2">
+              <span class="text-slate-500 font-mono">Tech Stack:</span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">PyTorch 2.x</span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">Ultralytics YOLOv8</span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">ResNet / EfficientNet</span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">Grad-CAM</span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">Streamlit</span>
+            </div>
+            <div class="font-mono text-slate-500">Press <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-cyan-400">SPACE</kbd> or <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-cyan-400">→</kbd> to proceed</div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 2: PROBLEM STATEMENT & INDUSTRIAL BOTTLENECK -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <!-- Slide Header -->
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-triangle-exclamation"></i> 01 / BỐI CẢNH & THÁCH THỨC CÔNG NGHIỆP</div>
+          <h2 class="slide-title">Thực Trạng Kiểm Định Bo Mạch In & Điểm Nghẽn Trong Dây Chuyền SMT</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left Column: 3 Bottleneck Cards -->
+          <div class="col-span-7 flex flex-col justify-between gap-3">
+            
+            <div class="glass-card p-3.5 border-l-4 border-l-rose-500">
+              <div class="flex items-start gap-3">
+                <div class="w-9 h-9 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 text-base">
+                  <i class="fa-solid fa-eye-slash"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-white mb-0.5">1. Kiểm Tra Thủ Công (Manual Visual Inspection - MVI)</h3>
+                  <p class="text-xs text-slate-300 leading-relaxed">
+                    Tốc độ xử lý chậm (<span class="text-rose-400 font-semibold">15-30 giây/bo mạch</span>). Người thao tác bị mỏi mắt sau 2 giờ liên tục, tỷ lệ sai sót chủ quan <span class="text-rose-400 font-semibold">20% - 30%</span>, làm tăng chi phí nhân sự và rủi ro lọt sản phẩm lỗi (Escape Rate).
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="glass-card p-3.5 border-l-4 border-l-amber-500">
+              <div class="flex items-start gap-3">
+                <div class="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 text-base">
+                  <i class="fa-solid fa-camera-rotate"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-white mb-0.5">2. Máy AOI Truyền Thống Dựa Trên Luật (Rule-based AOI)</h3>
+                  <p class="text-xs text-slate-300 leading-relaxed">
+                    Sử dụng phép trừ ảnh mẫu (Golden Template Subtraction) và ngưỡng nhị phân. Cực kỳ nhạy cảm với ánh sáng, góc chụp và dung sai hàn, dẫn tới tỷ lệ <span class="text-amber-400 font-semibold">báo giả (False Positive Rate) lên tới 40% - 60%</span> gây quá tải trạm kiểm duyệt lại (Review Station).
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="glass-card p-3.5 border-l-4 border-l-cyan-500">
+              <div class="flex items-start gap-3">
+                <div class="w-9 h-9 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 text-base">
+                  <i class="fa-solid fa-magnifying-glass-chart"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-white mb-0.5">3. Thách Thức Kích Thước Lỗi Vi Mô (Extreme Scale Imbalance)</h3>
+                  <p class="text-xs text-slate-300 leading-relaxed">
+                    Vết lỗi chiếm <span class="text-cyan-400 font-semibold">&lt; 0.1% tổng diện tích ảnh</span> PCB (ảnh 2000-3000px). Các mô hình Object Detection đơn tầng truyền thống gặp hiện tượng mất mát thông tin không gian nghiêm trọng khi downsample feature maps.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Right Column: Comparison Matrix Table -->
+          <div class="col-span-5 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider"><i class="fa-solid fa-scale-balanced mr-1"></i> Bảng So Sánh 3 Phương Pháp</span>
+                  <span class="badge badge-emerald">Industry Benchmark</span>
+                </div>
+                
+                <table class="tech-table">
+                  <thead>
+                    <tr>
+                      <th>Tiêu Chí</th>
+                      <th>MVI Thủ Công</th>
+                      <th>AOI Truyền Thống</th>
+                      <th>AI Hybrid Đề Xuất</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="font-semibold text-slate-300">Tốc độ</td>
+                      <td class="text-rose-400">15-30s / bo</td>
+                      <td class="text-amber-400">0.5-2s / bo</td>
+                      <td class="text-emerald-400 font-bold">~33ms / bo (Realtime)</td>
+                    </tr>
+                    <tr>
+                      <td class="font-semibold text-slate-300">Độ chính xác</td>
+                      <td class="text-rose-400">70% - 80%</td>
+                      <td class="text-amber-400">80% - 85%</td>
+                      <td class="text-emerald-400 font-bold">98.79% (on crops)</td>
+                    </tr>
+                    <tr>
+                      <td class="font-semibold text-slate-300">Tỷ lệ báo giả (FP)</td>
+                      <td class="text-amber-400">Thấp (~10%)</td>
+                      <td class="text-rose-400">Rất cao (40-60%)</td>
+                      <td class="text-emerald-400 font-bold">Rất thấp (&lt; 2.1%)</td>
+                    </tr>
+                    <tr>
+                      <td class="font-semibold text-slate-300">Khả năng thích ứng</td>
+                      <td class="text-amber-400">Thủ công</td>
+                      <td class="text-rose-400">Cần tạo rule lại</td>
+                      <td class="text-emerald-400 font-bold">Transfer Learning</td>
+                    </tr>
+                    <tr>
+                      <td class="font-semibold text-slate-300">Minh bạch (XAI)</td>
+                      <td class="text-emerald-400">Trực quan mắt</td>
+                      <td class="text-emerald-400">Mask trừ ảnh</td>
+                      <td class="text-emerald-400 font-bold">Grad-CAM Heatmap</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Insight Quote -->
+              <div class="mt-3 p-2.5 rounded bg-cyan-950/40 border border-cyan-500/20 text-xs text-cyan-200">
+                <i class="fa-solid fa-lightbulb text-amber-400 mr-1.5"></i>
+                <strong>Mục tiêu cốt lõi:</strong> Tự động hóa hoàn toàn khâu kiểm định, giảm 90% chi phí review thủ công và đảm bảo phát hiện chính xác 6/6 dạng lỗi mạch vi mô.
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 3: PROPOSED SOLUTION - TWO-STAGE HYBRID PIPELINE -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-diagram-project"></i> 02 / KIẾN TRÚC HỆ THỐNG ĐỀ XUẤT</div>
+          <h2 class="slide-title">Kiến Trúc Hybrid 2 Giai Đoạn: YOLOv8m + CNN + XAI Grad-CAM</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 8 cols: Interactive Dataflow Pipeline Diagram -->
+          <div class="col-span-8 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between">
+              
+              <div class="text-xs font-mono text-cyan-400 font-bold uppercase mb-2 flex items-center justify-between">
+                <span><i class="fa-solid fa-arrow-right-arrow-left mr-1"></i> End-to-End Pipeline Data Flow</span>
+                <span class="text-slate-400 text-xs font-mono">Stage 1 (Localize) ➔ Dynamic Crop ➔ Stage 2 (Classify) ➔ XAI</span>
+              </div>
+
+              <!-- 4-Step Visual Flowchart -->
+              <div class="grid grid-cols-4 gap-2.5 my-auto">
+                
+                <!-- Step 1 -->
+                <div class="glass-card-sm p-3 border-t-2 border-t-cyan-400 flex flex-col justify-between">
+                  <div class="text-cyan-400 font-bold text-xs font-mono mb-1">BƯỚC 1</div>
+                  <div class="text-sm font-bold text-white mb-1"><i class="fa-solid fa-image text-cyan-400 mr-1"></i> Raw PCB</div>
+                  <div class="text-xs text-slate-400 leading-tight">Ảnh bo mạch độ phân giải cao (2048×2048 hoặc kích thước gốc).</div>
+                  <div class="mt-2 text-[10px] font-mono text-slate-500 bg-slate-900/70 p-1 rounded">Input Tensor BGR</div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="glass-card-sm p-3 border-t-2 border-t-indigo-400 flex flex-col justify-between">
+                  <div class="text-indigo-400 font-bold text-xs font-mono mb-1">BƯỚC 2</div>
+                  <div class="text-sm font-bold text-white mb-1"><i class="fa-solid fa-crosshairs text-indigo-400 mr-1"></i> YOLOv8m</div>
+                  <div class="text-xs text-slate-400 leading-tight">Định vị nhanh toàn bộ candidate bounding boxes có nguy cơ lỗi.</div>
+                  <div class="mt-2 text-[10px] font-mono text-indigo-300 bg-indigo-950/60 p-1 rounded">mAP50: 99.46%</div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="glass-card-sm p-3 border-t-2 border-t-emerald-400 flex flex-col justify-between">
+                  <div class="text-emerald-400 font-bold text-xs font-mono mb-1">BƯỚC 3</div>
+                  <div class="text-sm font-bold text-white mb-1"><i class="fa-solid fa-crop-simple text-emerald-400 mr-1"></i> Crop + Pad</div>
+                  <div class="text-xs text-slate-400 leading-tight">Cắt bounding box + thêm 25% margin padding (min 32px) giữ trọn ngữ cảnh.</div>
+                  <div class="mt-2 text-[10px] font-mono text-emerald-300 bg-emerald-950/60 p-1 rounded">Dynamic Context</div>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="glass-card-sm p-3 border-t-2 border-t-amber-400 flex flex-col justify-between">
+                  <div class="text-amber-400 font-bold text-xs font-mono mb-1">BƯỚC 4</div>
+                  <div class="text-sm font-bold text-white mb-1"><i class="fa-solid fa-brain text-amber-400 mr-1"></i> CNN + XAI</div>
+                  <div class="text-xs text-slate-400 leading-tight">Phân loại 6 lớp lỗi với độ chính xác cao + trích xuất Grad-CAM Heatmap.</div>
+                  <div class="mt-2 text-[10px] font-mono text-amber-300 bg-amber-950/60 p-1 rounded">Crop Acc: 98.79%</div>
+                </div>
+
+              </div>
+
+              <!-- Pipeline Advantages Checklist -->
+              <div class="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-800 text-xs">
+                <div class="flex items-center gap-1.5 text-slate-300">
+                  <i class="fa-solid fa-check-double text-cyan-400"></i>
+                  <span>Triệt tiêu background imbalance</span>
+                </div>
+                <div class="flex items-center gap-1.5 text-slate-300">
+                  <i class="fa-solid fa-check-double text-indigo-400"></i>
+                  <span>Tăng tối đa độ phân giải vùng lỗi</span>
+                </div>
+                <div class="flex items-center gap-1.5 text-slate-300">
+                  <i class="fa-solid fa-check-double text-emerald-400"></i>
+                  <span>Xóa bỏ AI Black-box với Grad-CAM</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Right 4 cols: Combined Confidence Formula & Math Principles -->
+          <div class="col-span-4 flex flex-col justify-between gap-3">
+            
+            <!-- Mathematical Confidence Box -->
+            <div class="glass-card p-4 border-l-4 border-l-indigo-400">
+              <div class="text-xs font-mono text-indigo-400 font-bold uppercase mb-1">Dual-Confidence Scoring</div>
+              <h3 class="text-sm font-bold text-white mb-2">Công Thức Tích Hợp Độ Tin Cậy</h3>
+              
+              <div class="bg-slate-900/90 border border-slate-700 rounded-lg p-3 my-2 text-center">
+                <div class="text-lg font-mono text-cyan-300 font-bold">
+                  $$C_{\text{final}} = C_{\text{YOLO}} \times C_{\text{CNN}}$$
+                </div>
+              </div>
+
+              <p class="text-xs text-slate-300 leading-relaxed mt-2">
+                Kết hợp nhân xác suất giữa bộ dò vị trí $C_{\text{YOLO}}$ và bộ phân loại $C_{\text{CNN}}$. Ngưỡng lọc kép giúp tự động loại bỏ triệt để các bounding box nhiễu từ Stage 1.
+              </p>
+            </div>
+
+            <!-- Architectural Rationale -->
+            <div class="glass-card p-3.5 border-l-4 border-l-emerald-400">
+              <div class="text-xs font-mono text-emerald-400 font-bold uppercase mb-1">Design Philosophy</div>
+              <h3 class="text-sm font-bold text-white mb-1">Triết Lý "Chia Để Trị" (Divide & Conquer)</h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Stage 1 tập trung tối ưu Recall để không bỏ sót lỗi. Stage 2 tập trung phân loại mịn với Deep CNN chuyên biệt để đạt Precision tối đa.
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 4: DATASET & 6 INDUSTRIAL DEFECT CLASSES -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-database"></i> 03 / DỮ LIỆU & ĐẶC TẢ 6 LOẠI LỖI</div>
+          <h2 class="slide-title">Bộ Dữ Liệu PKU PCB & Đặc Điểm Hình Thái 6 Lớp Lỗi Vi Mô</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-4 flex-1 items-stretch">
+          
+          <!-- Top Left Info: Dataset Distribution -->
+          <div class="col-span-12 glass-card p-3 flex items-center justify-between">
+            <div class="flex items-center gap-6">
+              <div>
+                <span class="text-xs font-mono text-slate-400 uppercase">Nguồn Dữ Liệu:</span>
+                <span class="text-sm font-bold text-white ml-2">PKU PCB Defect Dataset (Kaggle)</span>
+              </div>
+              <div class="h-4 w-px bg-slate-700"></div>
+              <div>
+                <span class="text-xs font-mono text-slate-400 uppercase">Tổng Ground Truth:</span>
+                <span class="text-sm font-bold text-cyan-400 ml-2 font-mono">2,158 Defect Boxes</span>
+              </div>
+              <div class="h-4 w-px bg-slate-700"></div>
+              <div>
+                <span class="text-xs font-mono text-slate-400 uppercase">Bo Mạch Gốc:</span>
+                <span class="text-sm font-bold text-indigo-400 ml-2 font-mono">1,386 Images</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="badge badge-cyan">Split: Train / Val / Test</span>
+              <span class="badge badge-emerald">Augmentation x4</span>
+            </div>
+          </div>
+
+          <!-- 6 Defect Cards Grid (2 rows x 3 cols) -->
+          <div class="col-span-12 grid grid-cols-3 gap-3 my-auto">
+            
+            <!-- 1. missing_hole -->
+            <div class="glass-card p-3 border-l-4 border-l-[#EF4444] bg-[#EF4444]/5">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.4);">
+                  <i class="fa-solid fa-circle-dot mr-1"></i> Class 0
+                </span>
+                <span class="font-mono text-xs font-bold text-red-400">#EF4444</span>
+              </div>
+              <h3 class="text-sm font-bold text-white">missing_hole (Thiếu lỗ)</h3>
+              <p class="text-xs text-slate-300 mt-1 leading-snug">
+                Lỗ via hoặc lỗ cắm chân linh kiện THT bị thiếu do gãy mũi khoan hoặc sai file CNC khoan mạch.
+              </p>
+            </div>
+
+            <!-- 2. mouse_bite -->
+            <div class="glass-card p-3 border-l-4 border-l-[#F97316] bg-[#F97316]/5">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="badge" style="background: rgba(249, 115, 22, 0.2); color: #F97316; border: 1px solid rgba(249, 115, 22, 0.4);">
+                  <i class="fa-solid fa-teeth-open mr-1"></i> Class 1
+                </span>
+                <span class="font-mono text-xs font-bold text-orange-400">#F97316</span>
+              </div>
+              <h3 class="text-sm font-bold text-white">mouse_bite (Gặm mép)</h3>
+              <p class="text-xs text-slate-300 mt-1 leading-snug">
+                Khuyết dạng răng cưa ở viền đường mạch do ăn mòn hóa học quá mức (over-etching) hoặc phay mép panel.
+              </p>
+            </div>
+
+            <!-- 3. open_circuit -->
+            <div class="glass-card p-3 border-l-4 border-l-[#EAB308] bg-[#EAB308]/5">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="badge" style="background: rgba(234, 179, 8, 0.2); color: #EAB308; border: 1px solid rgba(234, 179, 8, 0.4);">
+                  <i class="fa-solid fa-bolt-slash mr-1"></i> Class 2
+                </span>
+                <span class="font-mono text-xs font-bold text-yellow-400">#EAB308</span>
+              </div>
+              <h3 class="text-sm font-bold text-white">open_circuit (Hở mạch)</h3>
+              <p class="text-xs text-slate-300 mt-1 leading-snug">
+                Đường dẫn đồng bị đứt gãy hoàn toàn tạo thành khe hở, làm mất kết nối điện dẫn tín hiệu.
+              </p>
+            </div>
+
+            <!-- 4. short -->
+            <div class="glass-card p-3 border-l-4 border-l-[#22C55E] bg-[#22C55E]/5">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #22C55E; border: 1px solid rgba(34, 197, 94, 0.4);">
+                  <i class="fa-solid fa-plug-circle-bolt mr-1"></i> Class 3
+                </span>
+                <span class="font-mono text-xs font-bold text-emerald-400">#22C55E</span>
+              </div>
+              <h3 class="text-sm font-bold text-white">short (Đoản mạch)</h3>
+              <p class="text-xs text-slate-300 mt-1 leading-snug">
+                Cầu nối đồng thừa ngoài ý muốn nối chập 2 đường dẫn liền kề, gây chập nguồn hoặc hỏng linh kiện.
+              </p>
+            </div>
+
+            <!-- 5. spur -->
+            <div class="glass-card p-3 border-l-4 border-l-[#3B82F6] bg-[#3B82F6]/5">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #3B82F6; border: 1px solid rgba(59, 130, 246, 0.4);">
+                  <i class="fa-solid fa-arrow-trend-up mr-1"></i> Class 4
+                </span>
+                <span class="font-mono text-xs font-bold text-blue-400">#3B82F6</span>
+              </div>
+              <h3 class="text-sm font-bold text-white">spur (Gai đồng)</h3>
+              <p class="text-xs text-slate-300 mt-1 leading-snug">
+                Mấu đồng nhọn nhô ra từ cạnh đường mạch nhưng chưa chạm tới đường bên cạnh (tiền thân đoản mạch).
+              </p>
+            </div>
+
+            <!-- 6. spurious_copper -->
+            <div class="glass-card p-3 border-l-4 border-l-[#A855F7] bg-[#A855F7]/5">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #A855F7; border: 1px solid rgba(168, 85, 247, 0.4);">
+                  <i class="fa-solid fa-shapes mr-1"></i> Class 5
+                </span>
+                <span class="font-mono text-xs font-bold text-purple-400">#A855F7</span>
+              </div>
+              <h3 class="text-sm font-bold text-white">spurious_copper (Đồng thừa)</h3>
+              <p class="text-xs text-slate-300 mt-1 leading-snug">
+                Đốm đồng cô lập nằm tự do trên nền cách điện FR4 do quá trình ăn mòn hóa học chưa sạch.
+              </p>
+            </div>
+
+          </div>
+
+          <!-- Augmentation Pipeline Banner -->
+          <div class="col-span-12 glass-card p-2.5 flex items-center justify-between text-xs text-slate-300">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-wand-magic-sparkles text-cyan-400"></i>
+              <span class="font-semibold text-white">Augmentation Pipeline:</span>
+              <span>Random Rotation (±10°), ColorJitter (Brightness/Contrast ±20%), Horizontal/Vertical Flip, ImageNet Norm</span>
+            </div>
+            <span class="text-cyan-400 font-mono font-semibold">Tăng cường tính bất biến quang học</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 5: STAGE 1 - YOLOV8 DEFECT REGION LOCALIZATION -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-crosshairs"></i> 04 / GIAI ĐOẠN 1: ĐỊNH VỊ VÙNG LỖI</div>
+          <h2 class="slide-title">YOLOv8m Object Detector — Định Vị Nhanh Vùng Khả Nghi Trên PCB</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 6 cols: Architecture & Hyperparameters -->
+          <div class="col-span-6 flex flex-col justify-between gap-3">
+            
+            <div class="glass-card p-3.5 border-l-4 border-l-cyan-400">
+              <h3 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-cyan-400"></i>
+                Kiến Trúc Mạng YOLOv8m Cải Tiến
+              </h3>
+              <ul class="space-y-1.5 text-xs text-slate-300">
+                <li class="flex items-start gap-2">
+                  <i class="fa-solid fa-circle-chevron-right text-cyan-400 mt-0.5 text-[10px]"></i>
+                  <span><strong>Backbone CSPDarknet + C2f:</strong> Tăng cường khả năng truyền gradient đa nhánh, trích xuất đặc trưng hình thái vi mô cực tốt.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <i class="fa-solid fa-circle-chevron-right text-cyan-400 mt-0.5 text-[10px]"></i>
+                  <span><strong>Neck PANet + FPN Đa Tỷ Lệ:</strong> Kết hợp các feature map P3 (80×80), P4 (40×40), P5 (20×20) bắt trọn các lỗi từ siêu nhỏ đến lớn.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <i class="fa-solid fa-circle-chevron-right text-cyan-400 mt-0.5 text-[10px]"></i>
+                  <span><strong>Anchor-Free Decoupled Head:</strong> Tách biệt hoàn toàn nhánh phân loại và hồi quy tọa độ (CIoU + DFL Loss).</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Hyperparameters Grid -->
+            <div class="glass-card p-3.5">
+              <div class="text-xs font-mono text-cyan-400 font-bold uppercase mb-2">Siêu Tham Số Huấn Luyện Tối Ưu</div>
+              <div class="grid grid-cols-4 gap-2 text-center text-xs">
+                <div class="p-2 rounded bg-slate-900/80 border border-slate-800">
+                  <div class="text-slate-400 text-[10px] font-mono">Image Size</div>
+                  <div class="text-sm font-bold text-cyan-300 font-mono">768×768</div>
+                </div>
+                <div class="p-2 rounded bg-slate-900/80 border border-slate-800">
+                  <div class="text-slate-400 text-[10px] font-mono">Optimizer</div>
+                  <div class="text-sm font-bold text-indigo-300 font-mono">AdamW</div>
+                </div>
+                <div class="p-2 rounded bg-slate-900/80 border border-slate-800">
+                  <div class="text-slate-400 text-[10px] font-mono">Learning Rate</div>
+                  <div class="text-sm font-bold text-emerald-300 font-mono">8e-4 (Cos)</div>
+                </div>
+                <div class="p-2 rounded bg-slate-900/80 border border-slate-800">
+                  <div class="text-slate-400 text-[10px] font-mono">Epochs / Batch</div>
+                  <div class="text-sm font-bold text-amber-300 font-mono">150 / 16</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Terminal Code -->
+            <div class="mac-terminal">
+              <div class="mac-header">
+                <div class="mac-dots">
+                  <span class="mac-dot red"></span>
+                  <span class="mac-dot yellow"></span>
+                  <span class="mac-dot green"></span>
+                </div>
+                <div class="text-[10px] font-mono text-slate-400">PowerShell — YOLO Stage 1 Training</div>
+                <div class="text-slate-500"><i class="fa-solid fa-terminal text-xs"></i></div>
+              </div>
+              <pre><code class="language-powershell">yolo detect train data=pcb-defect-dataset/data.yaml \
+  model=yolov8m.pt epochs=150 imgsz=768 batch=16 \
+  optimizer=AdamW lr0=0.0008 cos_lr=True name=v8m_768_adamw_aug</code></pre>
+            </div>
+
+          </div>
+
+          <!-- Right 6 cols: Experimental Metrics & Results -->
+          <div class="col-span-6 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between border-l-4 border-l-emerald-400">
+              
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider"><i class="fa-solid fa-chart-line mr-1"></i> Kết Quả Huấn Luyện Stage 1</span>
+                  <span class="badge badge-emerald">Model Checkpoint: best.pt</span>
+                </div>
+
+                <!-- 4 Metrics Big Display -->
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                  <div class="p-3 rounded-lg bg-slate-900/90 border border-emerald-500/30 text-center">
+                    <div class="text-xs font-mono text-slate-400">mAP@50 (IoU 0.50)</div>
+                    <div class="text-3xl font-black text-emerald-400 font-mono">99.46%</div>
+                    <div class="text-[10px] text-emerald-300 mt-0.5">Vượt trội so với mAP gốc 92.1%</div>
+                  </div>
+                  <div class="p-3 rounded-lg bg-slate-900/90 border border-cyan-500/30 text-center">
+                    <div class="text-xs font-mono text-slate-400">mAP@50-95 (Strict IoU)</div>
+                    <div class="text-3xl font-black text-cyan-400 font-mono">72.80%</div>
+                    <div class="text-[10px] text-cyan-300 mt-0.5">Độ khớp viền bounding box cao</div>
+                  </div>
+                  <div class="p-3 rounded-lg bg-slate-900/90 border border-indigo-500/30 text-center">
+                    <div class="text-xs font-mono text-slate-400">Precision (Độ chuẩn xác)</div>
+                    <div class="text-3xl font-black text-indigo-400 font-mono">99.23%</div>
+                    <div class="text-[10px] text-indigo-300 mt-0.5">Rất ít đề xuất báo giả</div>
+                  </div>
+                  <div class="p-3 rounded-lg bg-slate-900/90 border border-amber-500/30 text-center">
+                    <div class="text-xs font-mono text-slate-400">Recall (Độ nhạy phát hiện)</div>
+                    <div class="text-3xl font-black text-amber-400 font-mono">99.08%</div>
+                    <div class="text-[10px] text-amber-300 mt-0.5">Bắt trọn gần như 100% ứng viên lỗi</div>
+                  </div>
+                </div>
+
+                <!-- Technical Note -->
+                <div class="p-3 rounded bg-slate-900/80 border border-slate-800 text-xs text-slate-300">
+                  <div class="font-bold text-white mb-1"><i class="fa-solid fa-microchip text-cyan-400 mr-1.5"></i> Nhận định kỹ thuật:</div>
+                  <p class="leading-relaxed">
+                    Độ phân giải 768px kết hợp AdamW và Cosine LR giúp YOLOv8m hội tụ mượt mà, đạt đỉnh mAP50 sau 120 epochs mà không bị dao động gradient ở các vùng mạch đồng phức tạp.
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800">
+                <span>Inference speed: <strong class="text-white font-mono">~18.2 ms</strong> / 768px frame</span>
+                <span class="text-emerald-400 font-mono"><i class="fa-solid fa-circle-check mr-1"></i> Ready for Stage 2 Cropping</span>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 6: STAGE 2 - CNN REFINEMENT & ARCHITECTURE COMPARISON -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-microscope"></i> 05 / GIAI ĐOẠN 2: PHÂN LOẠI CHI TIẾT</div>
+          <h2 class="slide-title">CNN Refinement & So Sánh Thực Nghiệm 3 Kiến Trúc Sâu</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 5 cols: Dynamic Crop Mechanism -->
+          <div class="col-span-5 flex flex-col justify-between gap-3">
+            
+            <div class="glass-card p-3.5 border-l-4 border-l-cyan-400">
+              <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-expand text-cyan-400"></i>
+                Cơ Chế Dynamic Crop + Margin Padding
+              </h3>
+              <p class="text-xs text-slate-300 leading-relaxed mb-2">
+                Để tránh mất mát ngữ cảnh biên đường mạch (edge context), mỗi bounding box từ Stage 1 được tự động thêm <span class="text-cyan-400 font-semibold">25% padding</span> mỗi phía và ép kích thước tối thiểu <span class="text-cyan-400 font-semibold">32×32 px</span>:
+              </p>
+              
+              <div class="bg-slate-900/90 rounded p-2.5 font-mono text-[11px] text-slate-300 border border-slate-700">
+                pad_w = int(0.25 * box_width)<br>
+                pad_h = int(0.25 * box_height)<br>
+                crop = image[y1-pad_h : y2+pad_h, x1-pad_w : x2+pad_w]
+              </div>
+            </div>
+
+            <!-- Advanced Training Strategies -->
+            <div class="glass-card p-3.5 border-l-4 border-l-indigo-400">
+              <h3 class="text-sm font-bold text-white mb-1.5 flex items-center gap-2">
+                <i class="fa-solid fa-sliders text-indigo-400"></i>
+                Kỹ Thuật Huấn Luyện Nâng Cao
+              </h3>
+              <ul class="space-y-1.5 text-xs text-slate-300">
+                <li class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                  <span><strong>Differential LR:</strong> Backbone ($3\times 10^{-4}$) vs Classifier Head ($1\times 10^{-3}$).</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span><strong>OneCycleLR:</strong> 15% Warmup phase + Cosine annealing decay.</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span><strong>Label Smoothing ($\epsilon=0.05$):</strong> Giảm overconfidence ở lớp Spur.</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                  <span><strong>AMP FP16:</strong> Tăng tốc huấn luyện gấp 2.4x trên GPU CUDA.</span>
+                </li>
+              </ul>
+            </div>
+
+          </div>
+
+          <!-- Right 7 cols: Comparison Table of ResNet18 vs ResNet50 vs EfficientNet-B2 -->
+          <div class="col-span-7 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between">
+              
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
+                    <i class="fa-solid fa-chart-simple mr-1"></i> Bảng So Sánh 3 Kiến Trúc Phân Loại
+                  </span>
+                  <span class="badge badge-emerald">Source: compare_stage2_models.py</span>
+                </div>
+
+                <table class="tech-table">
+                  <thead>
+                    <tr>
+                      <th>Kiến Trúc</th>
+                      <th>Val Acc / F1</th>
+                      <th>Test Acc</th>
+                      <th>Test F1</th>
+                      <th>Params</th>
+                      <th>Latency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="border-l-2 border-l-emerald-400 bg-emerald-950/20">
+                      <td class="font-bold text-emerald-300">
+                        <i class="fa-solid fa-crown text-amber-400 mr-1"></i> ResNet-18
+                      </td>
+                      <td class="font-mono text-emerald-400 font-bold">100.0% / 1.00</td>
+                      <td class="font-mono text-emerald-400 font-bold">100.0%</td>
+                      <td class="font-mono text-emerald-400 font-bold">1.0000</td>
+                      <td class="font-mono text-slate-300">11.18M</td>
+                      <td class="font-mono text-emerald-400 font-bold">2.89 ms</td>
+                    </tr>
+                    <tr>
+                      <td class="font-bold text-indigo-300">ResNet-50</td>
+                      <td class="font-mono text-indigo-400">99.95% / 0.999</td>
+                      <td class="font-mono text-indigo-400">99.91%</td>
+                      <td class="font-mono text-indigo-400">0.9990</td>
+                      <td class="font-mono text-slate-300">23.52M</td>
+                      <td class="font-mono text-indigo-400">6.58 ms</td>
+                    </tr>
+                    <tr>
+                      <td class="font-bold text-cyan-300">EfficientNet-B2</td>
+                      <td class="font-mono text-cyan-400">99.95% / 0.999</td>
+                      <td class="font-mono text-cyan-400">99.81%</td>
+                      <td class="font-mono text-cyan-400">0.9981</td>
+                      <td class="font-mono text-emerald-400 font-bold">7.71M</td>
+                      <td class="font-mono text-cyan-400">14.55 ms</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Recommendation Summary Box -->
+              <div class="mt-3 p-3 rounded-lg bg-slate-900/90 border border-slate-800">
+                <div class="text-xs font-bold text-white mb-1 flex items-center gap-1.5">
+                  <i class="fa-solid fa-trophy text-amber-400"></i>
+                  <span>Lựa chọn tối ưu cho hệ thống công nghiệp:</span>
+                </div>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                  <strong class="text-emerald-400">ResNet-18</strong> được chọn làm Backbone mặc định cho Stage 2 nhờ đạt độ chính xác hoàn hảo <strong class="text-emerald-400">100.0%</strong> trên tập test độc lập cùng tốc độ suy luận siêu tốc <strong class="text-emerald-400">2.89 ms/ảnh</strong> (nhanh gấp 5x so với EfficientNet-B2).
+                </p>
+              </div>
+
+              <div class="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-800">
+                <span>Checkpoint saved: <code class="text-cyan-400 font-mono">runs/stage2/resnet18/best.pt</code></span>
+                <span class="badge badge-cyan">Zero False-Negatives</span>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 7: EXPLAINABLE AI - GRAD-CAM VISUAL INTERPRETABILITY -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-wand-magic-sparkles"></i> 06 / XAI — GIẢI THÍCH MÔ HÌNH VỚI GRAD-CAM</div>
+          <h2 class="slide-title">Minh Bạch Hóa Quyết Định Phân Loại Trong Kiểm Định Công Nghiệp</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 5 cols: XAI Motivation & Mathematical Foundations -->
+          <div class="col-span-5 flex flex-col justify-between gap-3">
+            
+            <div class="glass-card p-3.5 border-l-4 border-l-cyan-400">
+              <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-shield-halved text-cyan-400"></i>
+                Tầm Quan Trọng Của XAI Trong Nhà Máy
+              </h3>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Trong sản xuất công nghệ cao, các kỹ sư QA/QC cần biết <em>"Tại sao mô hình kết luận đây là lỗi Short thay vì Spur?"</em>. Grad-CAM giúp giải thích vùng tập trung thị giác, loại bỏ rủi ro mô hình học vẹt nền viền.
+              </p>
+            </div>
+
+            <!-- KaTeX Math Formulations Card -->
+            <div class="glass-card p-3.5 border-l-4 border-l-indigo-400">
+              <div class="text-xs font-mono text-indigo-400 font-bold uppercase mb-1">Cơ Sở Toán Học Grad-CAM</div>
+              
+              <div class="space-y-2 text-xs text-slate-200">
+                <div>
+                  <div class="text-[11px] text-slate-400">1. Trọng số đóng góp feature map $k$ cho lớp $c$:</div>
+                  <div class="bg-slate-900/90 py-1.5 px-2 rounded border border-slate-800 text-center font-mono text-cyan-300">
+                    $$\alpha_k^c = \frac{1}{Z} \sum_{i=1}^u \sum_{j=1}^v \frac{\partial Y^c}{\partial A_{i,j}^k}$$
+                  </div>
+                </div>
+
+                <div>
+                  <div class="text-[11px] text-slate-400">2. Bản đồ kích hoạt tổng hợp qua hàm ReLU:</div>
+                  <div class="bg-slate-900/90 py-1.5 px-2 rounded border border-slate-800 text-center font-mono text-indigo-300">
+                    $$L_{\text{Grad-CAM}}^c = \text{ReLU}\left( \sum_k \alpha_k^c A^k \right)$$
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-2 text-[11px] text-slate-400 leading-tight">
+                <strong>Hook Target Layer:</strong> Hook vào <code class="text-cyan-300 font-mono">model.layer4[-1]</code> (ResNet) hoặc <code class="text-cyan-300 font-mono">model.features[-1]</code> (EfficientNet).
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Right 7 cols: Triple-Panel Interactive Visual Representation -->
+          <div class="col-span-7 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between">
+              
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
+                    <i class="fa-solid fa-eye mr-1"></i> Triple-Panel Visual Inspection Flow
+                  </span>
+                  <span class="badge badge-amber">Prediction: mouse_bite (99.8%)</span>
+                </div>
+
+                <!-- 3 Mock Visual Panels Simulation -->
+                <div class="grid grid-cols-3 gap-2.5 my-2">
+                  
+                  <!-- Panel 1: Original Crop -->
+                  <div class="p-2 rounded-lg bg-slate-900/90 border border-slate-700 flex flex-col items-center">
+                    <div class="w-full h-32 rounded bg-slate-950 flex items-center justify-center relative overflow-hidden border border-slate-800">
+                      <!-- SVG representation of PCB Trace with Defect -->
+                      <svg width="100" height="100" viewBox="0 0 100 100" class="w-24 h-24">
+                        <rect width="100" height="100" fill="#0A192F"/>
+                        <path d="M 20 20 L 80 20 L 80 80 L 20 80 Z" fill="#0D3B3A" stroke="#10B981" stroke-width="2"/>
+                        <!-- Mouse bite defect -->
+                        <path d="M 45 20 Q 50 35 55 20" fill="#0A192F" stroke="#EF4444" stroke-width="1.5"/>
+                        <circle cx="50" cy="50" r="14" fill="#0A192F" stroke="#EAB308" stroke-width="2"/>
+                      </svg>
+                      <span class="absolute bottom-1 right-1 text-[9px] font-mono bg-slate-900/80 px-1 rounded text-slate-400">Crop 224px</span>
+                    </div>
+                    <div class="text-xs font-bold text-slate-200 mt-2">1. Vùng Crop Gốc</div>
+                    <div class="text-[10px] text-slate-400">RGB Bounding Box + 25% Pad</div>
+                  </div>
+
+                  <!-- Panel 2: Heatmap -->
+                  <div class="p-2 rounded-lg bg-slate-900/90 border border-slate-700 flex flex-col items-center">
+                    <div class="w-full h-32 rounded bg-slate-950 flex items-center justify-center relative overflow-hidden border border-slate-800">
+                      <!-- SVG Heatmap representation -->
+                      <svg width="100" height="100" viewBox="0 0 100 100" class="w-24 h-24">
+                        <defs>
+                          <radialGradient id="heatGrad" cx="50%" cy="25%" r="40%">
+                            <stop offset="0%" stop-color="#EF4444" stop-opacity="1"/>
+                            <stop offset="50%" stop-color="#EAB308" stop-opacity="0.8"/>
+                            <stop offset="80%" stop-color="#3B82F6" stop-opacity="0.4"/>
+                            <stop offset="100%" stop-color="#0A192F" stop-opacity="0"/>
+                          </radialGradient>
+                        </defs>
+                        <rect width="100" height="100" fill="#0A192F"/>
+                        <circle cx="50" cy="25" r="30" fill="url(#heatGrad)"/>
+                      </svg>
+                      <span class="absolute bottom-1 right-1 text-[9px] font-mono bg-slate-900/80 px-1 rounded text-rose-400">Jet Map [0,1]</span>
+                    </div>
+                    <div class="text-xs font-bold text-slate-200 mt-2">2. Grad-CAM Heatmap</div>
+                    <div class="text-[10px] text-slate-400">Trọng số tập trung Gradient</div>
+                  </div>
+
+                  <!-- Panel 3: Overlay -->
+                  <div class="p-2 rounded-lg bg-slate-900/90 border border-cyan-500/40 flex flex-col items-center">
+                    <div class="w-full h-32 rounded bg-slate-950 flex items-center justify-center relative overflow-hidden border border-slate-800">
+                      <svg width="100" height="100" viewBox="0 0 100 100" class="w-24 h-24">
+                        <rect width="100" height="100" fill="#0A192F"/>
+                        <path d="M 20 20 L 80 20 L 80 80 L 20 80 Z" fill="#0D3B3A" stroke="#10B981" stroke-width="2"/>
+                        <path d="M 45 20 Q 50 35 55 20" fill="#0A192F" stroke="#EF4444" stroke-width="1.5"/>
+                        <circle cx="50" cy="50" r="14" fill="#0A192F" stroke="#EAB308" stroke-width="2"/>
+                        <circle cx="50" cy="25" r="22" fill="#EF4444" fill-opacity="0.5" stroke="#F59E0B" stroke-width="1"/>
+                      </svg>
+                      <span class="absolute bottom-1 right-1 text-[9px] font-mono bg-emerald-950/80 px-1 rounded text-emerald-400 font-bold">α = 0.45</span>
+                    </div>
+                    <div class="text-xs font-bold text-cyan-300 mt-2">3. Blended Overlay</div>
+                    <div class="text-[10px] text-slate-400">Trực quan hóa cho QA/QC</div>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- Insight Verification -->
+              <div class="p-2.5 rounded bg-emerald-950/30 border border-emerald-500/30 text-xs text-slate-200">
+                <i class="fa-solid fa-circle-check text-emerald-400 mr-1.5"></i>
+                <strong>Xác thực thực nghiệm:</strong> Bản đồ nhiệt tập trung chuẩn xác 100% vào vị trí khuyết tật mép đường mạch (không bị phân tán vào nền FR4 hay vias), khẳng định tính tổng quát hóa cao của CNN.
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 8: END-TO-END SYSTEM EVALUATION & HUNGARIAN MATCHING -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-chart-pie"></i> 07 / ĐÁNH GIÁ TOÀN DIỆN HỆ THỐNG</div>
+          <h2 class="slide-title">Đánh Giá Toàn Diện End-to-End & Thuật Toán Hungarian Matching</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 5 cols: Hungarian Algorithm & Benchmark Numbers -->
+          <div class="col-span-5 flex flex-col justify-between gap-3">
+            
+            <div class="glass-card p-3.5 border-l-4 border-l-indigo-400">
+              <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-code-compare text-indigo-400"></i>
+                Cơ Chế Ghép Cặp Hungarian Matching
+              </h3>
+              <p class="text-xs text-slate-300 leading-relaxed mb-2">
+                Để đánh giá khách quan không bị trùng lặp, thuật toán <strong>Hungarian (Kuhn-Munkres)</strong> giải bài toán phân công đồ thị 2 phía cực đại hóa tổng IoU với ngưỡng ràng buộc:
+              </p>
+              <div class="bg-slate-900/90 py-1 px-2 rounded font-mono text-xs text-cyan-300 text-center border border-slate-700">
+                $$\text{Match condition: } \text{IoU}(\text{Box}_{\text{pred}}, \text{Box}_{\text{gt}}) \ge 0.50$$
+              </div>
+            </div>
+
+            <!-- Quantitative Summary Table -->
+            <div class="glass-card p-3.5 border-l-4 border-l-emerald-400">
+              <div class="text-xs font-mono text-emerald-400 font-bold uppercase mb-2">Tổng Hợp Kết Quả Tập Test (2,158 Boxes)</div>
+              
+              <div class="space-y-1.5 text-xs">
+                <div class="flex justify-between py-1 border-b border-slate-800">
+                  <span class="text-slate-400">Tổng số Ground Truth Defect:</span>
+                  <span class="font-mono font-bold text-white">2,158 boxes</span>
+                </div>
+                <div class="flex justify-between py-1 border-b border-slate-800">
+                  <span class="text-slate-400">Tổng số Dự đoán (Stage 1+2):</span>
+                  <span class="font-mono font-bold text-cyan-400">1,689 boxes</span>
+                </div>
+                <div class="flex justify-between py-1 border-b border-slate-800">
+                  <span class="text-slate-400">Dự đoán đúng hoàn toàn (TP):</span>
+                  <span class="font-mono font-bold text-emerald-400">1,633 boxes</span>
+                </div>
+                <div class="flex justify-between py-1 border-b border-slate-800">
+                  <span class="text-slate-400">Độ chính xác toàn hệ thống:</span>
+                  <span class="font-mono font-bold text-indigo-400">75.67%</span>
+                </div>
+                <div class="flex justify-between py-1">
+                  <span class="text-slate-400">Độ chính xác phân loại (trên crop):</span>
+                  <span class="font-mono font-bold text-emerald-400">98.79%</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Right 7 cols: Per-class Metrics Breakdown Table & Progress Bars -->
+          <div class="col-span-7 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between">
+              
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
+                    <i class="fa-solid fa-list-check mr-1"></i> Hiệu Năng Phân Loại Từng Lớp Lỗi
+                  </span>
+                  <span class="badge badge-emerald">Macro F1: 0.9880</span>
+                </div>
+
+                <!-- Per-Class Progress Bars -->
+                <div class="space-y-2.5 mb-3">
+                  
+                  <div>
+                    <div class="flex justify-between text-xs mb-1">
+                      <span class="font-semibold text-red-400"><i class="fa-solid fa-circle text-[8px] mr-1.5"></i> missing_hole</span>
+                      <span class="font-mono text-slate-300">F1: <strong class="text-emerald-400">0.992</strong> (P: 0.995, R: 0.989)</span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-red-500 to-emerald-400 rounded-full" style="width: 99.2%"></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div class="flex justify-between text-xs mb-1">
+                      <span class="font-semibold text-emerald-400"><i class="fa-solid fa-circle text-[8px] mr-1.5"></i> short</span>
+                      <span class="font-mono text-slate-300">F1: <strong class="text-emerald-400">0.989</strong> (P: 0.991, R: 0.987)</span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full" style="width: 98.9%"></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div class="flex justify-between text-xs mb-1">
+                      <span class="font-semibold text-orange-400"><i class="fa-solid fa-circle text-[8px] mr-1.5"></i> mouse_bite</span>
+                      <span class="font-mono text-slate-300">F1: <strong class="text-emerald-400">0.984</strong> (P: 0.988, R: 0.980)</span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-orange-500 to-amber-400 rounded-full" style="width: 98.4%"></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div class="flex justify-between text-xs mb-1">
+                      <span class="font-semibold text-yellow-400"><i class="fa-solid fa-circle text-[8px] mr-1.5"></i> open_circuit</span>
+                      <span class="font-mono text-slate-300">F1: <strong class="text-emerald-400">0.981</strong> (P: 0.985, R: 0.977)</span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-yellow-500 to-emerald-400 rounded-full" style="width: 98.1%"></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div class="flex justify-between text-xs mb-1">
+                      <span class="font-semibold text-purple-400"><i class="fa-solid fa-circle text-[8px] mr-1.5"></i> spurious_copper</span>
+                      <span class="font-mono text-slate-300">F1: <strong class="text-indigo-400">0.978</strong> (P: 0.980, R: 0.976)</span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full" style="width: 97.8%"></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div class="flex justify-between text-xs mb-1">
+                      <span class="font-semibold text-blue-400"><i class="fa-solid fa-circle text-[8px] mr-1.5"></i> spur</span>
+                      <span class="font-mono text-slate-300">F1: <strong class="text-indigo-400">0.975</strong> (P: 0.978, R: 0.972)</span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full" style="width: 97.5%"></div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- Latency Benchmark -->
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="p-2 rounded bg-slate-900/90 border border-emerald-500/30 flex flex-col justify-between">
+                  <span class="text-slate-400 font-mono text-[10px]"><i class="fa-solid fa-microchip text-emerald-400 mr-1"></i> GPU Benchmark (CUDA):</span>
+                  <span class="font-mono font-bold text-emerald-400">33.05 ms (~30.2 FPS)</span>
+                </div>
+                <div class="p-2 rounded bg-slate-900/90 border border-cyan-500/30 flex flex-col justify-between">
+                  <span class="text-slate-400 font-mono text-[10px]"><i class="fa-solid fa-laptop text-cyan-400 mr-1"></i> CPU Demo (Grad-CAM):</span>
+                  <span class="font-mono font-bold text-cyan-300">~600 ms (1 - 2 FPS)</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 9: SYSTEM WORKFLOW & CORE SOURCE CODE -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-code"></i> 08 / LUỒNG THỰC THI & MÃ NGUỒN CỐT LÕI</div>
+          <h2 class="slide-title">Quy Trình Xử Lý Hệ Thống & Hiện Thực Hóa <code>Stage12Pipeline</code></h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 7 cols: Code Snippet from stage12_yolo_cnn_system.py -->
+          <div class="col-span-7 flex flex-col justify-between">
+            <div class="mac-terminal h-full flex flex-col justify-between">
+              <div class="mac-header">
+                <div class="mac-dots">
+                  <span class="mac-dot red"></span>
+                  <span class="mac-dot yellow"></span>
+                  <span class="mac-dot green"></span>
+                </div>
+                <div class="text-xs font-mono text-cyan-400 font-bold">stage12_yolo_cnn_system.py — predict_image()</div>
+                <button onclick="copyCode(this)" class="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-800 transition">
+                  <i class="fa-regular fa-copy mr-1"></i> Copy
+                </button>
+              </div>
+
+              <div class="flex-1 overflow-hidden p-1">
+                <pre class="m-0"><code class="language-python" style="font-size:10.5px !important; line-height:1.32 !important; padding:8px 12px !important;">def predict_image(self, image_path):
+    image_bgr = cv2.imread(str(image_path))
+    height, width = image_bgr.shape[:2]
+    
+    # 1. Stage 1: Fast YOLOv8 Candidate Detection
+    results = self.detector.predict(
+        source=str(image_path), imgsz=self.yolo_imgsz,
+        conf=self.yolo_conf, iou=self.yolo_iou, verbose=False
+    )
+    predictions = []
+    
+    # 2. Stage 2: Dynamic Cropping & CNN Classification
+    for box in results[0].boxes:
+        x1, y1, x2, y2 = self._clip_box(*box.xyxy[0].tolist(), width, height)
+        crop = image_bgr[y1:y2, x1:x2]
+        if crop.size == 0: continue
+        
+        # Forward through CNN classifier (ResNet18)
+        stage2 = classify_crop_array(crop, self.cnn_bundle, device=self.device)
+        combined_conf = float(box.conf[0].item()) * stage2["confidence"]
+        
+        predictions.append({
+            "bbox": [x1, y1, x2, y2],
+            "stage1_label": results[0].names[int(box.cls[0].item())],
+            "stage2_label": stage2["pred_label"],
+            "stage2_confidence": stage2["confidence"],
+            "combined_confidence": combined_conf
+        })
+    return {"image_path": str(image_path), "predictions": predictions}</code></pre>
+              </div>
+
+              <div class="mac-header border-t border-b-0 text-[11px] text-slate-400">
+                <span><i class="fa-solid fa-check text-emerald-400 mr-1"></i> Clean Modular Architecture</span>
+                <span class="font-mono text-slate-500">Zero Dependencies Leak</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right 5 cols: Architecture Modules & Test Suite Specs -->
+          <div class="col-span-5 flex flex-col justify-between gap-3">
+            
+            <!-- Module Responsibilities Card -->
+            <div class="glass-card p-3.5 border-l-4 border-l-cyan-400">
+              <h3 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-cubes text-cyan-400"></i>
+                Cấu Trúc Module Hóa Chuẩn Kỹ Thuật
+              </h3>
+              <ul class="space-y-1.5 text-xs text-slate-300">
+                <li class="flex items-start gap-2">
+                  <code class="text-cyan-300 font-mono font-bold">utils.py</code>:
+                  <span>Chứa IoU, Bbox clipping, Hungarian assignment, dataset loading.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <code class="text-indigo-300 font-mono font-bold">stage2_cnn_utils.py</code>:
+                  <span>Tiền xử lý ImageNet, checkpoint bundle loader, inference crop.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <code class="text-emerald-300 font-mono font-bold">gradcam_ui.py</code>:
+                  <span>Tạo heatmap trực quan hóa tích hợp bộ nhớ đệm cache instance.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <code class="text-amber-300 font-mono font-bold">main.py</code>:
+                  <span>CLI Entry point hợp nhất (demo, train, evaluate, app).</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Testing Suite Verification -->
+            <div class="glass-card p-3.5 border-l-4 border-l-emerald-400">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-sm font-bold text-white"><i class="fa-solid fa-vial-circle-check text-emerald-400 mr-1.5"></i> Test Suite Toàn Diện (58 Tests)</h3>
+                <span class="badge badge-emerald">100% Pass</span>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-center text-xs mb-2">
+                <div class="p-2 rounded bg-slate-900/80 border border-slate-800">
+                  <div class="text-slate-400 font-mono text-[10px]">Unit Tests</div>
+                  <div class="text-base font-bold text-cyan-400 font-mono">46 Passed</div>
+                  <div class="text-[9px] text-slate-500">tests/test_utils.py</div>
+                </div>
+                <div class="p-2 rounded bg-slate-900/80 border border-slate-800">
+                  <div class="text-slate-400 font-mono text-[10px]">Integration Tests</div>
+                  <div class="text-base font-bold text-emerald-400 font-mono">12 Passed</div>
+                  <div class="text-[9px] text-slate-500">tests/test_pipeline.py</div>
+                </div>
+              </div>
+
+              <div class="text-[11px] text-slate-400 leading-tight">
+                Đảm bảo tính toàn vẹn tuyệt đối khi xử lý ảnh rỗng, tọa độ tràn biên, và ma trận phân công rỗng.
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 10: STREAMLIT WEB DASHBOARD & FACTORY UI -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-desktop"></i> 09 / ỨNG DỤNG WEB & GIAO DIỆN NHÀ MÁY</div>
+          <h2 class="slide-title">Hệ Thống Web Dashboard Streamlit Sẵn Sàng Cho Dây Chuyền SMT</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 5 cols: 4 Main Dashboard Tabs Overview -->
+          <div class="col-span-5 flex flex-col justify-between gap-2.5">
+            
+            <div class="glass-card p-2.5 border-l-4 border-l-cyan-400">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-white"><i class="fa-solid fa-magnifying-glass text-cyan-400 mr-1.5"></i> Tab 1: Detector & Micro-Loupe</span>
+                <span class="badge badge-cyan">Core UI</span>
+              </div>
+              <p class="text-[11px] text-slate-300 mt-1">
+                Kính lúp vi mô 4x-8x; Kiểm tra song song; Grad-CAM XAI; Xuất Phiếu Kiểm Định QA/QC HTML/PDF chuẩn xuất xưởng.
+              </p>
+            </div>
+
+            <div class="glass-card p-2.5 border-l-4 border-l-purple-400">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-white"><i class="fa-solid fa-industry text-purple-400 mr-1.5"></i> Tab 2: 🏭 SMT Live Stream</span>
+                <span class="badge badge-purple">Smart Factory</span>
+              </div>
+              <p class="text-[11px] text-slate-300 mt-1">
+                Mô phỏng camera băng chuyền quét tự động ~30 FPS trên RTX 4060; Tháp đèn Andon Light (PASS/NG); Thống kê sản lượng.
+              </p>
+            </div>
+
+            <div class="glass-card p-2.5 border-l-4 border-l-indigo-400">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-white"><i class="fa-solid fa-images text-indigo-400 mr-1.5"></i> Tab 3: Gallery (Batch AOI)</span>
+                <span class="badge badge-indigo">Multi-Upload</span>
+              </div>
+              <p class="text-[11px] text-slate-300 mt-1">
+                Kiểm tra mẻ hàng loạt bo mạch; Bảng Pivot thống kê tỉ lệ lỗi toàn ca sản xuất; Xuất báo cáo tổng hợp.
+              </p>
+            </div>
+
+            <div class="glass-card p-2.5 border-l-4 border-l-emerald-400">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-white"><i class="fa-solid fa-chart-line text-emerald-400 mr-1.5"></i> Tab 4: Performance & Analytics</span>
+                <span class="badge badge-emerald">Analytics</span>
+              </div>
+              <p class="text-[11px] text-slate-300 mt-1">
+                Tích hợp 8 biểu đồ Confusion Matrix, Training Curves và báo cáo Error Analysis chi tiết cho từng model CNN.
+              </p>
+            </div>
+
+          </div>
+
+          <!-- Right 7 cols: Side-by-Side Dual View & Live Real-Time Clock Monitor -->
+          <div class="col-span-7 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between">
+              
+              <!-- Live Real-Time System Clock Monitor Banner -->
+              <div class="flex items-center justify-between p-2 rounded bg-slate-900/90 border border-cyan-500/30 text-xs font-mono mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span class="text-emerald-400 font-bold uppercase tracking-wider">SYSTEM ACTIVE</span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-slate-300"><i class="fa-regular fa-clock text-cyan-400 mr-1"></i> <strong class="text-white">LIVE TIME:</strong> <span class="text-cyan-300">23:59:45</span></span>
+                  <span class="text-slate-300"><i class="fa-solid fa-stopwatch text-purple-400 mr-1"></i> <strong class="text-white">UPTIME:</strong> <span class="text-emerald-300">00:45:12</span></span>
+                </div>
+              </div>
+
+              <!-- Side-by-Side Dual View Container -->
+              <div class="grid grid-cols-2 gap-2 flex-1 items-center">
+                <!-- Box 1: Raw Original PCB -->
+                <div class="h-48 rounded bg-slate-950 flex flex-col justify-between relative border border-slate-800 p-2 overflow-hidden">
+                  <span class="badge badge-cyan font-mono text-[10px] self-start mb-1">ORIGINAL RAW PCB</span>
+                  <svg width="100%" height="120" viewBox="0 0 200 120" class="w-full h-full">
+                    <rect width="200" height="120" fill="#0A192F"/>
+                    <path d="M 20 20 L 180 20 L 180 100 L 20 100 Z" fill="#0D3B3A" stroke="#10B981" stroke-width="2"/>
+                    <path d="M 40 20 L 40 60 L 80 60" fill="none" stroke="#10B981" stroke-width="3"/>
+                    <path d="M 120 20 L 120 90 L 170 90" fill="none" stroke="#10B981" stroke-width="3"/>
+                    <circle cx="80" cy="60" r="10" fill="#0A192F" stroke="#EAB308" stroke-width="2"/>
+                    <circle cx="140" cy="50" r="10" fill="#0A192F" stroke="#EF4444" stroke-width="2"/>
+                  </svg>
+                  <span class="text-[10px] font-mono text-slate-400 text-center">Ảnh bo mạch quang học gốc</span>
+                </div>
+
+                <!-- Box 2: Annotated AI Detections -->
+                <div class="h-48 rounded bg-slate-950 flex flex-col justify-between relative border border-slate-800 p-2 overflow-hidden">
+                  <span class="badge badge-emerald font-mono text-[10px] self-start mb-1">AI DETECTIONS & REFINED</span>
+                  <svg width="100%" height="120" viewBox="0 0 200 120" class="w-full h-full">
+                    <rect width="200" height="120" fill="#0A192F"/>
+                    <path d="M 20 20 L 180 20 L 180 100 L 20 100 Z" fill="#0D3B3A" stroke="#10B981" stroke-width="2"/>
+                    <path d="M 40 20 L 40 60 L 80 60" fill="none" stroke="#10B981" stroke-width="3"/>
+                    <path d="M 120 20 L 120 90 L 170 90" fill="none" stroke="#10B981" stroke-width="3"/>
+                    <circle cx="80" cy="60" r="10" fill="#0A192F" stroke="#EAB308" stroke-width="2"/>
+                    <circle cx="140" cy="50" r="10" fill="#0A192F" stroke="#EF4444" stroke-width="2"/>
+                    <!-- Defect 1 Box -->
+                    <rect x="125" y="38" width="30" height="28" fill="none" stroke="#EF4444" stroke-width="2" stroke-dasharray="2"/>
+                    <rect x="125" y="24" width="70" height="12" fill="#EF4444" rx="2"/>
+                    <text x="128" y="33" fill="#FFFFFF" font-size="8" font-family="JetBrains Mono" font-weight="bold">missing_hole 99%</text>
+                    <!-- Defect 2 Box -->
+                    <rect x="30" y="48" width="28" height="24" fill="none" stroke="#F97316" stroke-width="2"/>
+                    <rect x="30" y="36" width="65" height="12" fill="#F97316" rx="2"/>
+                    <text x="33" y="45" fill="#FFFFFF" font-size="8" font-family="JetBrains Mono" font-weight="bold">mouse_bite 98%</text>
+                  </svg>
+                  <span class="text-[10px] font-mono text-emerald-400 text-center">2 lỗi đã khoanh vùng & phân loại</span>
+                </div>
+              </div>
+
+              <!-- Real-Time Metrics Strip & Launch Command -->
+              <div class="flex items-center justify-between p-2 rounded bg-slate-900/80 border border-slate-800 text-xs mt-2 font-mono">
+                <div class="flex items-center gap-3">
+                  <span class="text-emerald-400"><i class="fa-solid fa-microchip mr-1"></i> <strong class="text-white">GPU Benchmark:</strong> 33ms (30 FPS)</span>
+                  <span class="text-cyan-400"><i class="fa-solid fa-laptop mr-1"></i> <strong class="text-white">CPU Demo:</strong> ~600ms (1-2 FPS)</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-slate-400"><i class="fa-solid fa-terminal text-cyan-400"></i></span>
+                  <code class="text-cyan-300 font-bold bg-slate-950 px-2 py-0.5 rounded border border-slate-800">streamlit run app.py</code>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 11: ERROR ANALYSIS & TECHNICAL DISCUSSION -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-magnifying-glass-chart"></i> 10 / PHÂN TÍCH LỖI & THẢO LUẬN</div>
+          <h2 class="slide-title">Phân Tích Gốc Rễ Nguyên Nhân Lỗi & Giải Pháp Cải Tiến Kỹ Thuật</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 6 cols: 3 Error Types Breakdown from pipeline_errors.csv -->
+          <div class="col-span-6 flex flex-col justify-between gap-3">
+            
+            <div class="glass-card p-3 border-l-4 border-l-rose-500">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-bold text-white"><i class="fa-solid fa-eye-slash text-rose-400 mr-1.5"></i> 1. Bỏ Sót Ở Stage 1 (Missed Detections - FN)</span>
+                <span class="badge badge-rose font-mono">87.2% Tổng Lỗi</span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Chiếm <strong class="text-rose-400">505 / 579 lỗi</strong> trên tập test. Nguyên nhân do các vết lỗi vi mô chiếm diện tích &lt; 0.05% ảnh bị mất mát feature map sau các tầng tích chập downsample của YOLOv8.
+              </p>
+            </div>
+
+            <div class="glass-card p-3 border-l-4 border-l-purple-500">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-bold text-white"><i class="fa-solid fa-shuffle text-purple-400 mr-1.5"></i> 2. Phân Loại Sai Ở Stage 2 (Misclassification)</span>
+                <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.4);">6.6% Tổng Lỗi</span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Chỉ xảy ra ở <strong class="text-purple-400">20 - 38 boxes</strong>. Tập trung chủ yếu ở cặp nhầm lẫn hình thái tương đồng: <code class="text-cyan-300">Spur</code> (Gai đồng nối mạch) vs <code class="text-purple-300">Spurious Copper</code> (Đốm đồng cô lập sát mép).
+              </p>
+            </div>
+
+            <div class="glass-card p-3 border-l-4 border-l-amber-500">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-bold text-white"><i class="fa-solid fa-bell-slash text-amber-400 mr-1.5"></i> 3. Báo Giả Bounding Box (False Positives - FP)</span>
+                <span class="badge badge-amber font-mono">6.2% Tổng Lỗi</span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Có <strong class="text-amber-400">36 boxes</strong> do bóng đổ quang học từ các via pad khoan hoặc bụi bẩn tĩnh điện trên bề mặt bo mạch khi chụp ảnh.
+              </p>
+            </div>
+
+          </div>
+
+          <!-- Right 6 cols: Industrial Engineering Solutions -->
+          <div class="col-span-6 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between border-l-4 border-l-cyan-400">
+              
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
+                    <i class="fa-solid fa-wrench mr-1"></i> Đề Xuất Giải Pháp Nâng Cấp Công Nghiệp
+                  </span>
+                  <span class="badge badge-cyan">Optimization Roadmap</span>
+                </div>
+
+                <div class="space-y-3">
+                  
+                  <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                    <div class="text-xs font-bold text-cyan-300 mb-1 flex items-center gap-2">
+                      <i class="fa-solid fa-puzzle-piece"></i>
+                      <span>1. Tích hợp SAHI (Slicing Aided Hyper Inference)</span>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                      Chia nhỏ ảnh PCB kích thước lớn (2048×2048) thành lưới các ô trượt (slices) 640×640 với độ chồng lấp overlap 20%. Giữ nguyên 100% độ phân giải điểm ảnh ban đầu, giúp tăng khả năng bắt lỗi vi mô lên &gt; 95%.
+                    </p>
+                  </div>
+
+                  <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                    <div class="text-xs font-bold text-indigo-300 mb-1 flex items-center gap-2">
+                      <i class="fa-solid fa-filter-circle-dollar"></i>
+                      <span>2. Focal Loss & Hard Negative Mining</span>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                      Tăng trọng số mất mát đối với các mẫu lỗi hình thái khó phân biệt như Spur/Spurious Copper, giảm hiện tượng nhầm lẫn giữa các vết đồng thừa.
+                    </p>
+                  </div>
+
+                  <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                    <div class="text-xs font-bold text-emerald-300 mb-1 flex items-center gap-2">
+                      <i class="fa-solid fa-sun"></i>
+                      <span>3. Chiếu Sáng Đồng Trục (Coaxial Dome Lighting)</span>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                      Triển khai hệ thống nguồn sáng LED vòm đồng trục giúp triệt tiêu hoàn toàn bóng đổ quang học của chân linh kiện và pad hàn.
+                    </p>
+                  </div>
+
+                </div>
+              </div>
+
+              <div class="text-[11px] text-slate-400 pt-2 border-t border-slate-800 flex items-center justify-between">
+                <span>System Bottleneck Identified: <strong class="text-white">Stage 1 Recall on micro-boxes</strong></span>
+                <span class="text-emerald-400 font-mono"><i class="fa-solid fa-arrow-trend-up mr-1"></i> Stage 2 Accuracy &gt; 98.7%</span>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 12: CONCLUSION & FUTURE ROADMAP -->
+      <!-- ========================================================================= -->
+      <section data-transition="slide">
+        <div class="slide-header">
+          <div class="slide-section-tag"><i class="fa-solid fa-rocket"></i> 11 / TỔNG KẾT & LỘ TRÌNH PHÁT TRIỂN</div>
+          <h2 class="slide-title">Tổng Kết Đề Tài & Lộ Trình Công Nghiệp Hóa 4 Giai Đoạn</h2>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5 flex-1 items-stretch">
+          
+          <!-- Left 5 cols: 3 Core Contributions -->
+          <div class="col-span-5 flex flex-col justify-between gap-3">
+            
+            <div class="glass-card p-3.5 border-l-4 border-l-emerald-400">
+              <h3 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-trophy text-emerald-400"></i>
+                3 Đóng Góp Cốt Lõi Của Đề Tài
+              </h3>
+              
+              <ul class="space-y-2 text-xs text-slate-300">
+                <li class="flex items-start gap-2">
+                  <i class="fa-solid fa-circle-check text-emerald-400 mt-0.5"></i>
+                  <span><strong>Kiến Trúc Hybrid 2 Giai Đoạn:</strong> Đạt mAP50 99.46% và độ chính xác phân loại crop 98.79% - 100.0% trên 6 dạng lỗi PCB.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <i class="fa-solid fa-circle-check text-emerald-400 mt-0.5"></i>
+                  <span><strong>Minh Bạch Hóa XAI:</strong> Ứng dụng thành công Grad-CAM trực quan hóa vùng chú ý, đáp ứng tiêu chuẩn nghiệm thu nhà máy.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <i class="fa-solid fa-circle-check text-emerald-400 mt-0.5"></i>
+                  <span><strong>Hệ Thống Hoàn Chỉnh:</strong> Đóng gói trọn vẹn gồm Web App Streamlit, CLI main.py và 58 Automated Tests tự động.</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Deployment Readiness -->
+            <div class="glass-card p-3.5 border-l-4 border-l-cyan-400">
+              <div class="text-xs font-mono text-cyan-400 font-bold uppercase mb-1">Mức Độ Sẵn Sàng (TRL)</div>
+              <div class="flex items-center justify-between text-xs mb-1.5">
+                <span class="text-slate-300 font-semibold">Technology Readiness Level:</span>
+                <span class="badge badge-cyan font-mono">TRL 6 - Prototype Demo</span>
+              </div>
+              <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                <div class="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full" style="width: 75%"></div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Right 7 cols: 4-Phase Roadmap -->
+          <div class="col-span-7 flex flex-col justify-between">
+            <div class="glass-card p-4 h-full flex flex-col justify-between">
+              
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
+                    <i class="fa-solid fa-timeline mr-1"></i> Lộ Trình Triển Khai Dây Chuyền Thực Tế
+                  </span>
+                  <span class="badge badge-indigo">Industry 4.0 Plan</span>
+                </div>
+
+                <!-- 4 Phase Timeline Blocks -->
+                <div class="space-y-2.5">
+                  
+                  <div class="p-2.5 rounded-lg bg-slate-900/80 border-l-4 border-l-cyan-400 border border-slate-800">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold text-white">Giai đoạn 1: Tối Ưu Edge AI Với TensorRT</span>
+                      <span class="text-[10px] font-mono text-cyan-400 font-bold">Q3 / 2026</span>
+                    </div>
+                    <p class="text-xs text-slate-300 mt-0.5">
+                      Chuyển đổi mô hình sang TensorRT FP16/INT8, nhúng trực tiếp lên bo mạch nhúng NVIDIA Jetson Orin Nano / AGX đạt độ trễ &lt; 10ms.
+                    </p>
+                  </div>
+
+                  <div class="p-2.5 rounded-lg bg-slate-900/80 border-l-4 border-l-indigo-400 border border-slate-800">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold text-white">Giai đoạn 2: Vòng Lặp Active Learning Tự Động</span>
+                      <span class="text-[10px] font-mono text-indigo-400 font-bold">Q4 / 2026</span>
+                    </div>
+                    <p class="text-xs text-slate-300 mt-0.5">
+                      Tự động ghi nhận các mẫu lỗi có confidence thấp trong ca sản xuất, chuyển về server retraining và tự cập nhật trọng số định kỳ.
+                    </p>
+                  </div>
+
+                  <div class="p-2.5 rounded-lg bg-slate-900/80 border-l-4 border-l-emerald-400 border border-slate-800">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold text-white">Giai đoạn 3: Tích Hợp PLC / Modbus Với Robot SMT</span>
+                      <span class="text-[10px] font-mono text-emerald-400 font-bold">Q1 / 2027</span>
+                    </div>
+                    <p class="text-xs text-slate-300 mt-0.5">
+                      Giao tiếp chuẩn công nghiệp Modbus TCP / OPC-UA điều khiển cánh tay robot tự động gắp tách bo mạch NG (No-Good) sang khay loại.
+                    </p>
+                  </div>
+
+                  <div class="p-2.5 rounded-lg bg-slate-900/80 border-l-4 border-l-amber-400 border border-slate-800">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold text-white">Giai đoạn 4: Mở Rộng Hệ Thống 3D Stereo AOI</span>
+                      <span class="text-[10px] font-mono text-amber-400 font-bold">Q2 / 2027</span>
+                    </div>
+                    <p class="text-xs text-slate-300 mt-0.5">
+                      Tích hợp camera đa góc và laser đo độ cao phát hiện lỗi cong vênh PCB, lỗi thiếu thiếc hàn chân IC và linh kiện lệch cực tính.
+                    </p>
+                  </div>
+
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800">
+                <span>Trạng thái: <strong>Sẵn sàng chuyển giao công nghệ</strong></span>
+                <span class="text-cyan-400 font-mono"><i class="fa-solid fa-industry mr-1"></i> Smart Factory Ready</span>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- SLIDE 13: Q&A & THANK YOU -->
+      <!-- ========================================================================= -->
+      <section data-transition="fade">
+        <div class="h-full flex flex-col justify-between py-3">
+          
+          <!-- Top Header -->
+          <div class="flex items-center justify-between">
+            <span class="badge badge-cyan"><i class="fa-solid fa-comments mr-1"></i> PHIÊN HỎI ĐÁP & BẢO VỆ ĐỒ ÁN</span>
+            <span class="text-xs font-mono text-slate-400">NATIONAL ECONOMICS UNIVERSITY — NEU</span>
+          </div>
+
+          <!-- Main Center Card -->
+          <div class="my-auto text-center max-w-3xl mx-auto">
+            
+            <div class="w-16 h-16 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-bold text-2xl text-white shadow-xl shadow-cyan-500/30 mx-auto mb-4 animate-bounce">
+              <i class="fa-solid fa-handshake-angle"></i>
+            </div>
+
+            <h1 class="text-3xl lg:text-4xl font-extrabold text-white tracking-tight mb-2">
+              TRÂN TRỌNG CẢM ƠN HỘI ĐỒNG ĐÁNH GIÁ<br>
+              <span class="text-gradient-cyan">& QUÝ THẦY CÔ ĐÃ LẮNG NGHE!</span>
+            </h1>
+
+            <p class="text-sm text-slate-300 max-w-xl mx-auto leading-relaxed mb-5">
+              Kính mong nhận được những câu hỏi, đóng góp và định hướng quý báu từ Hội đồng để đề tài tiếp tục hoàn thiện và sớm được chuyển giao ứng dụng vào thực tiễn sản xuất công nghiệp.
+            </p>
+
+            <!-- Author Contact Card -->
+            <div class="glass-card p-4 inline-flex flex-wrap items-center justify-center gap-6 text-xs text-slate-300 max-w-2xl mx-auto">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-user-graduate text-cyan-400 text-sm"></i>
+                <span>Tác giả: <strong>Nguyễn Duy Khương</strong></span>
+              </div>
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-id-badge text-indigo-400 text-sm"></i>
+                <span>MSSV: <strong class="font-mono text-indigo-300">11236134</strong></span>
+              </div>
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-laptop-code text-emerald-400 text-sm"></i>
+                <span>Live Demo: <code class="font-mono text-emerald-300 bg-slate-900 px-1.5 py-0.5 rounded">python main.py app</code></span>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center justify-center gap-4 mt-6">
+              <button onclick="Reveal.slide(0)" class="px-5 py-2.5 rounded-full bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 hover:opacity-90 transition flex items-center gap-2">
+                <i class="fa-solid fa-rotate-left"></i> Quay lại trang đầu
+              </button>
+              <button onclick="openShortcutsModal()" class="px-5 py-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center gap-2">
+                <i class="fa-solid fa-keyboard"></i> Phím tắt thuyết trình
+              </button>
+            </div>
+
+          </div>
+
+          <!-- Footer Metadata -->
+          <div class="flex items-center justify-between text-xs text-slate-500 border-t border-slate-800 pt-3">
+            <div>Đề tài: Phát hiện và phân loại lỗi PCB bằng YOLO kết hợp CNN & XAI</div>
+            <div class="font-mono">© 2026 Nguyễn Duy Khương — NEU</div>
+          </div>
+
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- FLOATING DECK CONTROLS -->
+  <!-- ========================================================================= -->
+  <div id="deck-controls">
+    <button class="deck-btn" onclick="Reveal.prev()" title="Previous Slide (← / PageUp)">
+      <i class="fa-solid fa-chevron-left"></i>
+    </button>
+    <div class="text-xs font-mono text-cyan-400 px-2 font-bold" id="slide-number-indicator">1 / 13</div>
+    <button class="deck-btn" onclick="Reveal.next()" title="Next Slide (→ / Space / PageDown)">
+      <i class="fa-solid fa-chevron-right"></i>
+    </button>
+    <div class="h-4 w-px bg-slate-700 mx-1"></div>
+    <button class="deck-btn" onclick="Reveal.toggleOverview()" title="Slide Overview (O / Esc)">
+      <i class="fa-solid fa-table-cells-large"></i>
+    </button>
+    <button class="deck-btn" onclick="toggleFullScreen()" title="Toggle Fullscreen (F)">
+      <i class="fa-solid fa-expand"></i>
+    </button>
+    <button class="deck-btn" onclick="openShortcutsModal()" title="Help & Shortcuts (?)">
+      <i class="fa-solid fa-circle-question"></i>
+    </button>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- KEYBOARD SHORTCUTS HELP MODAL -->
+  <!-- ========================================================================= -->
+  <div id="shortcuts-modal" onclick="closeShortcutsModal(event)">
+    <div class="glass-card p-6 max-w-lg w-full m-4 bg-slate-900/95 border border-cyan-500/30" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-keyboard text-cyan-400"></i> Phím Tắt Thuyết Trình (Keyboard Navigation)
+        </h3>
+        <button onclick="closeShortcutsModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+      
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div class="flex justify-between items-center p-2 rounded bg-slate-800/60">
+          <span class="text-slate-300">Chuyển slide tiếp:</span>
+          <kbd class="px-2 py-0.5 rounded bg-slate-950 text-cyan-400 font-mono">SPACE / →</kbd>
+        </div>
+        <div class="flex justify-between items-center p-2 rounded bg-slate-800/60">
+          <span class="text-slate-300">Quay lại slide trước:</span>
+          <kbd class="px-2 py-0.5 rounded bg-slate-950 text-cyan-400 font-mono">← / Backspace</kbd>
+        </div>
+        <div class="flex justify-between items-center p-2 rounded bg-slate-800/60">
+          <span class="text-slate-300">Bật/tắt Tổng quan (Grid):</span>
+          <kbd class="px-2 py-0.5 rounded bg-slate-950 text-cyan-400 font-mono">O / ESC</kbd>
+        </div>
+        <div class="flex justify-between items-center p-2 rounded bg-slate-800/60">
+          <span class="text-slate-300">Bật toàn màn hình:</span>
+          <kbd class="px-2 py-0.5 rounded bg-slate-950 text-cyan-400 font-mono">F</kbd>
+        </div>
+        <div class="flex justify-between items-center p-2 rounded bg-slate-800/60">
+          <span class="text-slate-300">Tắt màn hình (Blackout):</span>
+          <kbd class="px-2 py-0.5 rounded bg-slate-950 text-cyan-400 font-mono">B / .</kbd>
+        </div>
+        <div class="flex justify-between items-center p-2 rounded bg-slate-800/60">
+          <span class="text-slate-300">Menu trợ giúp:</span>
+          <kbd class="px-2 py-0.5 rounded bg-slate-950 text-cyan-400 font-mono">?</kbd>
+        </div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-800 text-center">
+        <button onclick="closeShortcutsModal()" class="px-5 py-1.5 rounded-full bg-cyan-500 text-slate-950 font-bold text-xs hover:bg-cyan-400 transition">
+          Đã hiểu, đóng cửa sổ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- REVEAL.JS & KATEX SCRIPTS -->
+  <!-- ========================================================================= -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+  <script>
+    // Initialize Reveal.js with optimal 16:9 HD presentation configuration
+    Reveal.initialize({
+      width: 1600,
+      height: 900,
+      margin: 0.02,
+      minScale: 0.2,
+      maxScale: 2.0,
+      controls: false, // Using custom floating controls
+      progress: true,
+      center: false,
+      hash: true,
+      slideNumber: false,
+      transition: 'slide', // none/fade/slide/convex/concave/zoom
+      transitionSpeed: 'default',
+      backgroundTransition: 'fade',
+      plugins: [ RevealHighlight ],
+      keyboard: {
+        70: function() { toggleFullScreen(); }, // 'f' for fullscreen
+        79: function() { Reveal.toggleOverview(); } // 'o' for overview
+      }
+    });
+
+    // Update Slide Number Indicator
+    function updateSlideNumber() {
+      const current = Reveal.getState().indexh + 1;
+      const total = Reveal.getTotalSlides();
+      const el = document.getElementById('slide-number-indicator');
+      if (el) {
+        el.textContent = `${current} / ${total}`;
+      }
+    }
+    Reveal.on('slidechanged', updateSlideNumber);
+    Reveal.on('ready', () => {
+      updateSlideNumber();
+      // Render KaTeX Math
+      renderMathInElement(document.body, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false}
+        ],
+        throwOnError: false
+      });
+      initComparisonSlider();
+    });
+
+    // Fullscreen Toggle
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    // Copy Code Helper
+    function copyCode(btn) {
+      const code = btn.closest('.mac-terminal').querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-check mr-1 text-emerald-400"></i> Copied!';
+        setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+      });
+    }
+
+    // Modal Helpers
+    function openShortcutsModal() {
+      document.getElementById('shortcuts-modal').classList.add('open');
+    }
+    function closeShortcutsModal(e) {
+      document.getElementById('shortcuts-modal').classList.remove('open');
+    }
+
+    // Interactive Before/After Comparison Slider Logic
+    function initComparisonSlider() {
+      const container = document.getElementById('slide-comparison-box');
+      const topLayer = document.getElementById('slider-img-top-layer');
+      const handle = document.getElementById('slider-handle-button');
+      if (!container || !topLayer || !handle) return;
+
+      let isDragging = false;
+
+      function updateSliderPosition(clientX) {
+        const rect = container.getBoundingClientRect();
+        let offsetX = clientX - rect.left;
+        if (offsetX < 0) offsetX = 0;
+        if (offsetX > rect.width) offsetX = rect.width;
+        const percentage = (offsetX / rect.width) * 100;
+        topLayer.style.width = percentage + '%';
+        handle.style.left = percentage + '%';
+      }
+
+      container.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        updateSliderPosition(e.clientX);
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        updateSliderPosition(e.clientX);
+      });
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+
+      // Touch events for mobile/tablet
+      container.addEventListener('touchstart', (e) => {
+        isDragging = true;
+        updateSliderPosition(e.touches[0].clientX);
+      }, { passive: true });
+      window.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        updateSliderPosition(e.touches[0].clientX);
+      }, { passive: true });
+      window.addEventListener('touchend', () => {
+        isDragging = false;
+      });
+    }
+  </script>
+
+</body>
+</html>

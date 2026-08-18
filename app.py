@@ -14,8 +14,11 @@ Custom inline SVG icon set for tabs, sections, and defect classes.
 
 from __future__ import annotations
 
+import datetime
 import json
+import random
 import tempfile
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -23,9 +26,12 @@ import cv2
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 
 from gradcam_ui import render_gradcam_for_detection
+from report_generator import generate_qc_certificate_html
+from zoom_component import render_interactive_zoom_loupe_html
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Page configuration (must be the first Streamlit call)
@@ -36,6 +42,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+if "app_start_time" not in st.session_state:
+    st.session_state["app_start_time"] = time.time()
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -57,6 +66,7 @@ DEFECT_COLORS = {
 }
 
 DEMO_INPUT_DIR = PROJECT_ROOT / "demo_input"
+DATASET_TEST_DIR = PROJECT_ROOT / "pcb-defect-dataset" / "test" / "images"
 GRADCAM_DIR = PROJECT_ROOT / "runs" / "gradcam"
 PERF_DIR = PROJECT_ROOT / "runs" / "system_eval"
 SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -240,6 +250,182 @@ ICONS = {
         '<path d="M5 13l7 7 7-7"/>'
     ),
 }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# System Clock & Runtime Widgets
+# ──────────────────────────────────────────────────────────────────────────────
+def _render_system_clock() -> None:
+    """Render a live digital real-time clock & system uptime widget."""
+    elapsed_init = int(time.time() - st.session_state.get("app_start_time", time.time()))
+    clock_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8">
+    <style>
+        * {{ margin:0; padding:0; box-sizing:border-box; font-family: 'JetBrains Mono', 'Segoe UI Mono', monospace; }}
+        body {{ background: transparent; overflow: hidden; }}
+        .clock-strip {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(180deg, rgba(19, 28, 46, 0.85) 0%, rgba(11, 15, 25, 0.95) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.22);
+            border-radius: 10px;
+            padding: 8px 18px;
+            color: #E2E8F0;
+            font-size: 13px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(12px);
+        }}
+        .clock-item {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .status-dot-pulse {{
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10B981;
+            box-shadow: 0 0 12px #10B981;
+            animation: pulse-dot 2s infinite ease-in-out;
+        }}
+        @keyframes pulse-dot {{
+            0%, 100% {{ transform: scale(1); opacity: 1; }}
+            50% {{ transform: scale(1.4); opacity: 0.5; }}
+        }}
+        .label {{
+            color: #94A3B8;
+            font-weight: 600;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }}
+        .val {{
+            color: #38BDF8;
+            font-weight: 700;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            padding: 2px 10px;
+            border-radius: 6px;
+            letter-spacing: 0.03em;
+        }}
+        .val.uptime {{
+            color: #34D399;
+            border-color: rgba(52, 211, 153, 0.25);
+        }}
+        .val.time {{
+            color: #F8FAFC;
+        }}
+    </style>
+    </head>
+    <body>
+        <div class="clock-strip">
+            <div class="clock-item">
+                <div class="status-dot-pulse"></div>
+                <span class="label">SYSTEM:</span>
+                <span style="color:#10B981; font-weight:700; font-size:12px;">ACTIVE & ONLINE</span>
+            </div>
+            <div class="clock-item">
+                <span class="label">🕒 LOCAL TIME:</span>
+                <span class="val time" id="live-time">--:--:--</span>
+            </div>
+            <div class="clock-item">
+                <span class="label">⏱️ SYSTEM RUNTIME:</span>
+                <span class="val uptime" id="live-uptime">00:00:00</span>
+            </div>
+        </div>
+        <script>
+            const startTime = Date.now() - ({elapsed_init} * 1000);
+            function updateClock() {{
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('vi-VN', {{ hour12: false }});
+                const dateStr = now.toLocaleDateString('vi-VN', {{ day: '2-digit', month: '2-digit', year: 'numeric' }});
+                const elTime = document.getElementById('live-time');
+                if (elTime) elTime.textContent = timeStr + ' · ' + dateStr;
+
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+                const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+                const s = String(elapsed % 60).padStart(2, '0');
+                const elUptime = document.getElementById('live-uptime');
+                if (elUptime) elUptime.textContent = `${{h}}:${{m}}:${{s}}`;
+            }}
+            setInterval(updateClock, 1000);
+            updateClock();
+        </script>
+    </body>
+    </html>
+    """
+    components.html(clock_html, height=52)
+
+
+def _render_sidebar_clock() -> None:
+    """Render a compact live clock widget for the sidebar."""
+    elapsed_init = int(time.time() - st.session_state.get("app_start_time", time.time()))
+    clock_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8">
+    <style>
+        * {{ margin:0; padding:0; box-sizing:border-box; font-family: 'JetBrains Mono', 'Segoe UI Mono', monospace; }}
+        body {{ background: transparent; overflow: hidden; }}
+        .side-clock {{
+            background: linear-gradient(180deg, rgba(19, 28, 46, 0.7) 0%, rgba(11, 15, 25, 0.85) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.18);
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #E2E8F0;
+            font-size: 12px;
+        }}
+        .row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }}
+        .row:last-child {{ margin-bottom: 0; }}
+        .lbl {{ color: #94A3B8; font-size: 11px; }}
+        .val {{ color: #F8FAFC; font-weight: 700; font-size: 12px; }}
+        .val.up {{ color: #34D399; }}
+    </style>
+    </head>
+    <body>
+        <div class="side-clock">
+            <div class="row">
+                <span class="lbl">🕒 Time:</span>
+                <span class="val" id="side-time">--:--:--</span>
+            </div>
+            <div class="row">
+                <span class="lbl">⏱️ Uptime:</span>
+                <span class="val up" id="side-uptime">00:00:00</span>
+            </div>
+        </div>
+        <script>
+            const startTime = Date.now() - ({elapsed_init} * 1000);
+            function updateSideClock() {{
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('vi-VN', {{ hour12: false }});
+                const elTime = document.getElementById('side-time');
+                if (elTime) elTime.textContent = timeStr;
+
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+                const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+                const s = String(elapsed % 60).padStart(2, '0');
+                const elUptime = document.getElementById('side-uptime');
+                if (elUptime) elUptime.textContent = `${{h}}:${{m}}:${{s}}`;
+            }}
+            setInterval(updateSideClock, 1000);
+            updateSideClock();
+        </script>
+    </body>
+    </html>
+    """
+    components.html(clock_html, height=72)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1082,7 +1268,8 @@ button[key^="demo_load_"] {
 # Model loading with caching
 # ──────────────────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
-def load_pipeline(yolo_path: str, cnn_path: str, imgsz: int, conf: float, iou: float):
+def load_pipeline(yolo_path: str, cnn_path: str, imgsz: int, conf: float, iou: float, device_mode: str = "cuda"):
+    import torch
     from stage12_yolo_cnn_system import Stage12Pipeline
 
     yolo_abs = PROJECT_ROOT / yolo_path
@@ -1093,9 +1280,12 @@ def load_pipeline(yolo_path: str, cnn_path: str, imgsz: int, conf: float, iou: f
     if not cnn_abs.exists():
         raise FileNotFoundError(f"CNN checkpoint not found:\n`{cnn_abs}`")
 
+    target_device = torch.device("cuda:0" if ("cuda" in device_mode and torch.cuda.is_available()) else "cpu")
+
     return Stage12Pipeline(
         yolo_path=str(yolo_abs),
         cnn_checkpoint=str(cnn_abs),
+        device=target_device,
         yolo_imgsz=imgsz,
         yolo_conf=conf,
         yolo_iou=iou,
@@ -1119,6 +1309,25 @@ with st.sidebar:
         "Two-stage pipeline: YOLO detection followed by CNN classification. "
         "Upload PCB images to locate and classify manufacturing defects."
     )
+    _render_sidebar_clock()
+    st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
+
+    import torch
+    cuda_available = torch.cuda.is_available()
+    st.markdown("## Hardware Acceleration")
+    device_options = ["cuda (GPU)"] if cuda_available else ["cpu (CPU)"]
+    if cuda_available:
+        device_options.append("cpu (CPU)")
+    selected_device_mode = st.selectbox(
+        "Execution Device",
+        options=device_options,
+        index=0,
+        help="NVIDIA GPU (CUDA) provides ~30 FPS real-time speed. CPU is used as fallback.",
+        key="hardware_device_select"
+    )
+    device_hardware_name = torch.cuda.get_device_name(0) if cuda_available and "cuda" in selected_device_mode else "CPU"
+    st.caption(f"Hardware: **{device_hardware_name}**")
+
     st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
 
     st.markdown("## CNN Model")
@@ -1186,13 +1395,18 @@ st.markdown(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
+# System Real-Time Clock & Status
+# ──────────────────────────────────────────────────────────────────────────────
+_render_system_clock()
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Model load + status
 # ──────────────────────────────────────────────────────────────────────────────
 pipeline = None
 model_ready = False
 try:
-    with st.spinner("Loading models. This may take a moment on first run."):
-        pipeline = load_pipeline(yolo_path, cnn_path, yolo_imgsz, yolo_conf, yolo_iou)
+    with st.spinner("Loading models on GPU/CPU. This may take a moment on first run."):
+        pipeline = load_pipeline(yolo_path, cnn_path, yolo_imgsz, yolo_conf, yolo_iou, device_mode=selected_device_mode)
     model_ready = True
 except FileNotFoundError as exc:
     st.error(f"**Model file missing**\n\n{exc}")
@@ -1201,8 +1415,9 @@ except Exception as exc:
     st.error(f"**Failed to load models**\n\n{exc}")
 
 if model_ready:
+    gpu_badge = f"🚀 GPU Accelerated ({device_hardware_name})" if "cuda" in selected_device_mode else "💻 CPU Mode"
     st.markdown(
-        f'<div class="status-banner"><span class="status-dot ready"></span>Pipeline loaded, ready for inference</div>',
+        f'<div class="status-banner"><span class="status-dot ready"></span>Pipeline loaded on <strong>{gpu_badge}</strong> · Ready for inference</div>',
         unsafe_allow_html=True,
     )
 else:
@@ -1224,21 +1439,39 @@ def _save_upload_to_temp(uploaded_file) -> str:
 
 
 def _run_pipeline(image_path: str) -> dict:
-    """Run inference + annotation for one image. Returns a result dict."""
-    from stage12_yolo_cnn_system import annotate_predictions
+    """Run inference + annotation for one image in-memory. Returns a result dict."""
+    image_bgr = cv2.imread(str(image_path))
+    if image_bgr is None:
+        raise FileNotFoundError(f"Cannot read image: {image_path}")
 
+    original_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     result = pipeline.predict_image(image_path)
-    annotated_bgr = annotate_predictions(image_path, result)
-    annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
 
-    original_rgb = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
-
+    annotated_bgr = image_bgr.copy()
     crops: list[np.ndarray] = []
     for pred in result.get("predictions", []):
         x1, y1, x2, y2 = pred["bbox"]
-        crop = cv2.imread(image_path)[y1:y2, x1:x2]
+        label = (
+            f"{pred['stage2_label']} "
+            f"y:{pred['stage1_confidence']:.2f} "
+            f"c:{pred['stage2_confidence']:.2f}"
+        )
+        cv2.rectangle(annotated_bgr, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(
+            annotated_bgr,
+            label,
+            (x1, max(20, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 0),
+            1,
+            cv2.LINE_AA,
+        )
+        crop = image_bgr[y1:y2, x1:x2]
         if crop is not None and crop.size > 0:
             crops.append(crop)
+
+    annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
     result["_annotated_rgb"] = annotated_rgb
     result["_original_rgb"] = original_rgb
     result["_crops"] = crops
@@ -1249,6 +1482,25 @@ def _list_demo_samples() -> list[Path]:
     if not DEMO_INPUT_DIR.exists():
         return []
     return sorted(p for p in DEMO_INPUT_DIR.iterdir() if p.suffix.lower() in SUPPORTED_EXTS)
+
+
+def _list_conveyor_samples(source_type: str = "dataset_test") -> list[Path]:
+    """Retrieve test images from dataset test folder, with fallback to other candidates."""
+    if source_type == "dataset_test":
+        candidates = [
+            DATASET_TEST_DIR,
+            PROJECT_ROOT / "pcb-defect-dataset" / "test" / "images",
+            PROJECT_ROOT / "pcb-defect-dataset" / "test",
+            PROJECT_ROOT / "dataset" / "test" / "images",
+            PROJECT_ROOT / "dataset" / "test",
+            PROJECT_ROOT / "data" / "test" / "images",
+        ]
+        for c in candidates:
+            if c.exists() and c.is_dir():
+                imgs = sorted(p for p in c.iterdir() if p.suffix.lower() in SUPPORTED_EXTS)
+                if imgs:
+                    return imgs
+    return _list_demo_samples()
 
 
 def _aggregate_predictions(results: list[dict]) -> tuple[list[str], list[float], Counter]:
@@ -1309,10 +1561,14 @@ def _render_image(rgb_array, label: str | None = None, icon_name: str = "image")
 # ──────────────────────────────────────────────────────────────────────────────
 # Tabs (with custom icon prefix in label)
 # ──────────────────────────────────────────────────────────────────────────────
-# Use only text labels here (Streamlit tabs do not support custom HTML in titles
-# reliably across versions). Icons are shown via sub-headers inside each tab.
-tab_detector, tab_gallery, tab_perf, tab_about = st.tabs(
-    ["Detector", "Gallery", "Performance", "About"]
+tab_detector, tab_conveyor, tab_gallery, tab_perf, tab_about = st.tabs(
+    [
+        "Detector (Soi Chi Tiết)",
+        "🏭 SMT Live Stream",
+        "Gallery (Kiểm Định Hàng Loạt)",
+        "Performance (Hiệu Năng)",
+        "About (Kiến Trúc)",
+    ]
 )
 
 
@@ -1322,35 +1578,53 @@ tab_detector, tab_gallery, tab_perf, tab_about = st.tabs(
 with tab_detector:
     st.markdown(
         f'<p class="tab-intro">{_icon("info", 14)} '
-        f'Detailed inspection with side-by-side original and detected views, plus GradCAM for each defect.</p>',
+        f'Kiểm định đơn ảnh chuyên sâu với chế độ xem song song, kính lúp vi mô 4x-8x, Grad-CAM XAI và xuất phiếu kiểm định QA/QC.</p>',
         unsafe_allow_html=True,
     )
 
-    demo_samples = _list_demo_samples()
-    if demo_samples and model_ready:
-        _section_heading("image", "Try a sample", count=len(demo_samples))
-        n = min(5, len(demo_samples))
-        cols = st.columns(n, gap="small")
-        for i, sample in enumerate(demo_samples[:n]):
-            with cols[i]:
-                # st.button label cannot render HTML; use plain text + a small
-                # character glyph for the leading icon.
-                if st.button(
-                    f"▸  {sample.stem[:20]}",
-                    key=f"demo_load_{i}",
-                    width="stretch",
-                    help=f"Load {sample.name}",
-                ):
-                    st.session_state["detector_upload"] = str(sample)
-        st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
+    _section_heading("image", "Chọn ảnh mẫu hoặc bo mạch từ Tập Test Dataset")
+    sample_tab_demo, sample_tab_dataset = st.tabs(["⚡ 5 Ảnh Mẫu Nhanh", "📦 1,069 Bo Mạch Tập Test Dataset"])
+    with sample_tab_demo:
+        demo_samples = _list_demo_samples()
+        if demo_samples and model_ready:
+            n = min(5, len(demo_samples))
+            cols = st.columns(n, gap="small")
+            for i, sample in enumerate(demo_samples[:n]):
+                with cols[i]:
+                    if st.button(
+                        f"▸ {sample.stem[:18]}",
+                        key=f"demo_load_{i}",
+                        width="stretch",
+                        help=f"Nạp ảnh {sample.name}",
+                    ):
+                        st.session_state["detector_upload"] = str(sample)
+                        st.rerun()
+    with sample_tab_dataset:
+        dataset_samples = _list_conveyor_samples("dataset_test")
+        if dataset_samples and model_ready:
+            ds_col1, ds_col2 = st.columns([3, 1], gap="small")
+            with ds_col1:
+                selected_ds_img = st.selectbox(
+                    "Chọn bo mạch từ tập Test:",
+                    [p.name for p in dataset_samples],
+                    key="tab1_ds_select",
+                    label_visibility="collapsed",
+                )
+            with ds_col2:
+                if st.button("🚀 Nạp Ảnh Này", width="stretch", key="tab1_load_ds_btn"):
+                    target_p = next((p for p in dataset_samples if p.name == selected_ds_img), None)
+                    if target_p:
+                        st.session_state["detector_upload"] = str(target_p)
+                        st.rerun()
+    st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
 
-    _section_heading("upload", "Upload an image")
+    _section_heading("upload", "Tải ảnh bo mạch PCB lên")
     detector_file = st.file_uploader(
-        "Upload a PCB image for detailed inspection",
+        "Tải ảnh bo mạch PCB để kiểm tra",
         type=["jpg", "jpeg", "png", "bmp"],
         accept_multiple_files=False,
         key="detector_uploader",
-        help="Supports JPG, JPEG, PNG, and BMP formats.",
+        help="Hỗ trợ các định dạng JPG, JPEG, PNG, BMP.",
         label_visibility="collapsed",
     )
 
@@ -1367,36 +1641,74 @@ with tab_detector:
 
     if image_path and model_ready:
         try:
-            # Show skeleton while running inference
             skeleton_slot = st.empty()
             with skeleton_slot.container():
                 _render_skeleton_pair()
-            with st.spinner("Running inference..."):
+            
+            t_start = time.perf_counter()
+            with st.spinner("Đang chạy suy luận mô hình 2 giai đoạn..."):
                 result = _run_pipeline(image_path)
+            t_latency_ms = (time.perf_counter() - t_start) * 1000.0
+            fps_equiv = 1000.0 / t_latency_ms if t_latency_ms > 0 else 0
             skeleton_slot.empty()
 
-            # Open card with file header inside (single markdown so the
-            # section-heading is a child of the card, not a sibling).
+            device_name = "CUDA GPU" if getattr(pipeline, "device", None) and pipeline.device.type == "cuda" else "CPU Demo"
+            preds = result.get("predictions", [])
+
+            # Open card with file header inside
             st.markdown(
                 f'<div class="card">'
                 f'<div class="section-heading" style="margin-top:0;">'
                 f'<span class="icon-wrap">{_icon("file", 14)}</span>'
-                f'<span style="font-size:.95rem;">{uploaded_name}</span></div>',
+                f'<span style="font-size:.95rem;">{uploaded_name}</span></div>'
+                f'<div style="display:flex; flex-wrap:wrap; gap:10px; margin: 10px 0 14px 0;">'
+                f'<div class="status-banner" style="margin-bottom:0; background:rgba(56,189,248,0.08); border-color:rgba(56,189,248,0.25);">'
+                f'<span style="color:#38bdf8; font-weight:600;">⚡ Latency ({device_name}):</span>'
+                f'<strong style="color:#f8fafc; margin-left:6px; font-family:\'JetBrains Mono\',monospace;">{t_latency_ms:.0f} ms</strong>'
+                f'<span style="color:#94a3b8; font-size:0.75rem; margin-left:4px;">(~{fps_equiv:.1f} FPS)</span></div>'
+                f'<div class="status-banner" style="margin-bottom:0; background:rgba(16,185,129,0.08); border-color:rgba(16,185,129,0.25);">'
+                f'<span style="color:#10b981; font-weight:600;">🎯 Detections:</span>'
+                f'<strong style="color:#f8fafc; margin-left:6px; font-family:\'JetBrains Mono\',monospace;">{len(preds)} defects</strong></div>'
+                f'<div class="status-banner" style="margin-bottom:0; background:rgba(168,85,247,0.08); border-color:rgba(168,85,247,0.25);">'
+                f'<span style="color:#c084fc; font-weight:600;">⚙️ Pipeline:</span>'
+                f'<strong style="color:#f8fafc; margin-left:6px; font-family:\'JetBrains Mono\',monospace;">YOLOv8m + {cnn_choice}</strong></div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
             original_rgb = result["_original_rgb"]
             annotated_rgb = result["_annotated_rgb"]
-            preds = result.get("predictions", [])
 
-            col_o, col_a = st.columns(2, gap="medium")
-            with col_o:
-                _render_image(original_rgb, label="Original", icon_name="image")
-            with col_a:
-                _render_image(annotated_rgb, label="Detections", icon_name="search")
+            # View Mode Selector: Side-by-side or Interactive Zoom Loupe
+            view_mode = st.radio(
+                "Chế độ hiển thị kiểm định:",
+                options=["Chế độ Xem Song Song (Side-by-Side)", "🔍 Kính Lúp Soi Vi Mô Tương Tác (Micro-Zoom Loupe 4x-8x)"],
+                horizontal=True,
+                key="detector_view_mode",
+            )
+
+            if view_mode.startswith("🔍"):
+                col_z1, col_z2 = st.columns([1, 1])
+                with col_z1:
+                    zoom_factor = st.slider("Độ phóng đại (Magnification)", 2, 8, 4, 1, key="loupe_zoom_factor")
+                with col_z2:
+                    lens_diameter = st.slider("Kích thước kính lúp (Lens Size)", 120, 240, 160, 20, key="loupe_lens_size")
+                
+                loupe_html = render_interactive_zoom_loupe_html(
+                    original_rgb, annotated_rgb, zoom_level=zoom_factor, lens_size=lens_diameter, container_height=420
+                )
+                components.html(loupe_html, height=490)
+            else:
+                col_o, col_a = st.columns(2, gap="medium")
+                with col_o:
+                    _render_image(original_rgb, label="Original Raw PCB", icon_name="image")
+                with col_a:
+                    _render_image(annotated_rgb, label="AI Detections & Refined", icon_name="search")
+
+            gradcam_crops_for_report = []
 
             if preds:
-                _section_heading("grid", "Detection details", count=len(preds))
+                _section_heading("grid", "Bảng kê chi tiết vết cắt khuyết tật", count=len(preds))
                 rows = [
                     {
                         "Defect": p["stage2_label"],
@@ -1421,8 +1733,8 @@ with tab_detector:
 
                 if show_gradcam:
                     st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
-                    _section_heading("fire", "GradCAM heatmaps", count=len(preds))
-                    st.caption("What the CNN looks at when classifying each defect region.")
+                    _section_heading("fire", "Bản đồ nhiệt Grad-CAM XAI (Explainable AI)", count=len(preds))
+                    st.caption("Trực quan hóa vùng đặc trưng nơ-ron tập trung khi phân loại khuyết tật bo mạch.")
                     crops = result["_crops"]
                     for idx, (pred, crop) in enumerate(zip(preds, crops)):
                         with st.expander(
@@ -1438,11 +1750,18 @@ with tab_detector:
                             if gradcam_out.get("mode") == "unsupported":
                                 st.info("GradCAM not supported for this CNN architecture.")
                             else:
+                                if gradcam_out.get("overlay") is not None:
+                                    gradcam_crops_for_report.append({
+                                        "label": pred["stage2_label"],
+                                        "confidence": pred["combined_confidence"],
+                                        "overlay": gradcam_out["overlay"]
+                                    })
+
                                 cols = st.columns(3, gap="small")
                                 with cols[0]:
                                     st.markdown(
                                         f'<div class="image-label">'
-                                        f'{_icon("image", 12)} Crop</div>',
+                                        f'{_icon("image", 12)} 1. Vùng Cắt Gốc (Crop)</div>',
                                         unsafe_allow_html=True,
                                     )
                                     st.markdown('<div class="image-frame">', unsafe_allow_html=True)
@@ -1454,23 +1773,23 @@ with tab_detector:
                                 with cols[1]:
                                     st.markdown(
                                         f'<div class="image-label">'
-                                        f'{_icon("fire", 12)} Heatmap</div>',
+                                        f'{_icon("fire", 12)} 2. Bản Đồ Nhiệt (Grad-CAM)</div>',
                                         unsafe_allow_html=True,
                                     )
-                                    if gradcam_out.get("cam") is not None:
+                                    heatmap_display = gradcam_out.get("heatmap")
+                                    if heatmap_display is not None:
                                         st.markdown('<div class="image-frame">', unsafe_allow_html=True)
                                         st.image(
-                                            gradcam_out["cam"],
+                                            heatmap_display,
                                             width="stretch",
-                                            clamp=True,
                                         )
                                         st.markdown("</div>", unsafe_allow_html=True)
                                     else:
-                                        st.caption("Heatmap not extracted from cache.")
+                                        st.caption("Không thể trích xuất Heatmap.")
                                 with cols[2]:
                                     st.markdown(
                                         f'<div class="image-label">'
-                                        f'{_icon("layers", 12)} Overlay</div>',
+                                        f'{_icon("layers", 12)} 3. Phủ Trực Quan (Overlay)</div>',
                                         unsafe_allow_html=True,
                                     )
                                     if gradcam_out.get("overlay") is not None:
@@ -1480,6 +1799,8 @@ with tab_detector:
                                             width="stretch",
                                         )
                                         st.markdown("</div>", unsafe_allow_html=True)
+                                
+                                st.caption("🔥 **Giải thích XAI:** 🔴 **Đỏ rực** = Vùng khuyết tật tập trung gradient nơ-ron cao nhất · 🔵 **Xanh lam** = Nền phíp FR4 cách điện an toàn.")
             else:
                 st.markdown(
                     f'<div style="display:flex; align-items:center; gap:.5rem; '
@@ -1487,34 +1808,279 @@ with tab_detector:
                     f'border:1px solid rgba(52,211,153,0.28); border-radius:10px; '
                     f'color:var(--accent-soft); font-weight:500;">'
                     f'{_icon("ok", 14, color="#34d399")}'
-                    f'<span>No defects detected. Board looks clean.</span>'
+                    f'<span>Không phát hiện khuyết tật. Bo mạch hoàn hảo đạt chuẩn 100% IPC-A-610.</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
+            # Export reports section
             st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
-            col_btn, _ = st.columns([1, 3])
-            with col_btn:
+            _section_heading("file", "Xuất Báo Cáo & Phiếu Nghiệm Thu Chất Lượng")
+            
+            qc_cert_html = generate_qc_certificate_html(
+                image_name=uploaded_name,
+                original_rgb=original_rgb,
+                annotated_rgb=annotated_rgb,
+                predictions=preds,
+                latency_ms=t_latency_ms,
+                device_name=device_hardware_name,
+                pipeline_name=f"YOLOv8m + {cnn_choice} (Two-Stage Hybrid)",
+                engineer_name="Nguyễn Duy Khương",
+                engineer_id="11236134",
+                gradcam_crops=gradcam_crops_for_report,
+            )
+
+            col_btn1, col_btn2 = st.columns(2, gap="medium")
+            with col_btn1:
+                st.download_button(
+                    label="📄 Tải Phiếu Kiểm Định QA/QC (HTML / In PDF)",
+                    data=qc_cert_html,
+                    file_name=f"QC_Certificate_{Path(uploaded_name).stem}.html",
+                    mime="text/html",
+                    key=f"dl_cert_{uploaded_name}",
+                    help="Tải phiếu chứng nhận chất lượng xuất xưởng chuẩn ISO/IPC có sẵn nút in PDF.",
+                    width="stretch",
+                )
+            with col_btn2:
                 public_result = {
                     k: v for k, v in result.items() if not k.startswith("_")
                 }
                 st.download_button(
-                    "Download results (JSON)",
+                    label="📥 Tải Dữ Liệu Tọa Độ Lỗi (JSON)",
                     data=json.dumps(public_result, indent=2),
                     file_name=f"{Path(uploaded_name).stem}_results.json",
                     mime="application/json",
                     key=f"dl_det_{uploaded_name}",
+                    help="Tải file JSON phục vụ kết nối hệ thống điều hành nhà máy MES/ERP.",
+                    width="stretch",
                 )
+
+            with st.expander("👁️ Xem trước Phiếu Kiểm Định QA/QC Xuất Xưởng", expanded=False):
+                components.html(qc_cert_html, height=720, scrolling=True)
 
             st.markdown("</div>", unsafe_allow_html=True)
         except Exception as exc:
-            st.error(f"Error processing **{uploaded_name}**: {exc}")
+            st.error(f"Lỗi xử lý ảnh **{uploaded_name}**: {exc}")
     else:
         st.markdown(
             _empty_state(
                 "upload",
-                "Drag and drop a PCB image to start inspection",
-                "Supports JPG, JPEG, PNG, and BMP. Or pick a sample above to try the pipeline instantly.",
+                "Kéo thả ảnh bo mạch PCB để bắt đầu kiểm tra",
+                "Hỗ trợ JPG, JPEG, PNG, BMP. Hoặc chọn nhanh các ảnh mẫu ở trên để kiểm định tức thì.",
+            ),
+            unsafe_allow_html=True,
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TAB 2 - 🏭 SMT Live Stream (Automated Conveyor Simulation)
+# ──────────────────────────────────────────────────────────────────────────────
+with tab_conveyor:
+    st.markdown(
+        f'<p class="tab-intro">{_icon("chip", 14)} '
+        f'Mô phỏng camera quang học tự động quét liên tục trên băng chuyền SMT với tốc độ GPU thời gian thực, '
+        f'tích hợp tháp đèn Andon Light và bảng theo dõi sản lượng.</p>',
+        unsafe_allow_html=True,
+    )
+
+    # Initialize conveyor session state
+    if "smt_total_scanned" not in st.session_state:
+        st.session_state["smt_total_scanned"] = 0
+        st.session_state["smt_pass_count"] = 0
+        st.session_state["smt_defect_count"] = 0
+        st.session_state["smt_history"] = []
+
+    # Conveyor Source & Options
+    col_src, col_shuf = st.columns([3, 1], gap="medium")
+    with col_src:
+        conveyor_source = st.selectbox(
+            "📦 Nguồn phôi bo mạch cho băng chuyền:",
+            [
+                "📦 Tập Test Thực Tế (pcb-defect-dataset/test/images - 1,069 bo mạch)",
+                "🔍 Ảnh Mẫu Nhanh (demo_input/ - 5 bo mạch)",
+            ],
+            index=0,
+            key="conveyor_source_select",
+        )
+    with col_shuf:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        shuffle_boards = st.checkbox("🔀 Quét Ngẫu Nhiên", value=True, help="Tự động bốc ngẫu nhiên các bo mạch khác nhau từ 1,069 ảnh trong tập test.")
+
+    source_type = "dataset_test" if "1,069" in conveyor_source else "demo_input"
+    conveyor_samples = _list_conveyor_samples(source_type)
+
+    # Conveyor Control Bar
+    ctrl_c1, ctrl_c2, ctrl_c3, ctrl_c4 = st.columns([1.5, 1.5, 1.5, 1.2], gap="small")
+    with ctrl_c1:
+        stream_active = st.toggle("▶️ Chạy Băng Chuyền", value=False, key="conveyor_toggle")
+    with ctrl_c2:
+        stream_speed_ms = st.slider("Độ trễ nhân tạo (ms/bo)", 0, 300, 0, 10, key="conveyor_speed", help="Đặt 0ms để chạy với tốc độ tối đa của GPU RTX 4060.")
+    with ctrl_c3:
+        max_stream_boards = st.number_input("Số bo mạch quét tối đa", min_value=5, max_value=200, value=20, key="conveyor_max")
+    with ctrl_c4:
+        if st.button("🔄 Reset Bộ Đếm", width="stretch", key="conveyor_reset_btn"):
+            st.session_state["smt_total_scanned"] = 0
+            st.session_state["smt_pass_count"] = 0
+            st.session_state["smt_defect_count"] = 0
+            st.session_state["smt_history"] = []
+            st.rerun()
+
+    st.markdown(
+        f'<div style="font-size:0.8rem; color:#94a3b8; margin-bottom:10px; font-family:monospace;">'
+        f'🏭 Nguồn cấp phôi: <strong style="color:#38bdf8;">{len(conveyor_samples):,} bo mạch</strong> '
+        f'từ <code>pcb-defect-dataset/test/images</code> | Đã sẵn sàng nạp camera AOI.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
+
+    # Real-Time KPI Cards Placeholder
+    kpi_placeholder = st.empty()
+    andon_placeholder = st.empty()
+    live_view_placeholder = st.empty()
+    history_placeholder = st.empty()
+
+    def _render_conveyor_kpis(live_fps: float = 0.0, live_lat: float = 0.0):
+        tot = st.session_state["smt_total_scanned"]
+        pas = st.session_state["smt_pass_count"]
+        dfc = st.session_state["smt_defect_count"]
+        yield_rate = (pas / tot * 100.0) if tot > 0 else 100.0
+        defect_rate = (dfc / tot * 100.0) if tot > 0 else 0.0
+
+        fps_display = f"{live_fps:.1f} bo/s" if live_fps > 0 else "Ready"
+        lat_display = f"({live_lat:.0f} ms)" if live_lat > 0 else ""
+
+        kpi_placeholder.markdown(
+            f"""
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
+                <div class="card" style="margin:0; padding:12px; text-align:center; border-top: 3px solid #38bdf8;">
+                    <div style="font-size:0.75rem; color:#94a3b8; font-weight:700; text-transform:uppercase;">📦 Tổng Số Bo Đã Quét</div>
+                    <div style="font-size:1.6rem; font-weight:800; font-family:'JetBrains Mono',monospace; color:#f8fafc; margin-top:4px;">{tot}</div>
+                </div>
+                <div class="card" style="margin:0; padding:12px; text-align:center; border-top: 3px solid #10b981;">
+                    <div style="font-size:0.75rem; color:#10b981; font-weight:700; text-transform:uppercase;">🟢 Bo Đạt Chuẩn (PASS)</div>
+                    <div style="font-size:1.6rem; font-weight:800; font-family:'JetBrains Mono',monospace; color:#10b981; margin-top:4px;">{pas} <span style="font-size:0.85rem; color:#6ee7b7;">({yield_rate:.1f}%)</span></div>
+                </div>
+                <div class="card" style="margin:0; padding:12px; text-align:center; border-top: 3px solid #ef4444;">
+                    <div style="font-size:0.75rem; color:#ef4444; font-weight:700; text-transform:uppercase;">🔴 Bo Lỗi / Phế Phẩm (NG)</div>
+                    <div style="font-size:1.6rem; font-weight:800; font-family:'JetBrains Mono',monospace; color:#ef4444; margin-top:4px;">{dfc} <span style="font-size:0.85rem; color:#fca5a5;">({defect_rate:.1f}%)</span></div>
+                </div>
+                <div class="card" style="margin:0; padding:12px; text-align:center; border-top: 3px solid #a855f7;">
+                    <div style="font-size:0.75rem; color:#c084fc; font-weight:700; text-transform:uppercase;">⚡ Tốc Độ GPU Băng Chuyền</div>
+                    <div style="font-size:1.6rem; font-weight:800; font-family:'JetBrains Mono',monospace; color:#c084fc; margin-top:4px;">{fps_display} <span style="font-size:0.85rem; color:#d8b4fe;">{lat_display}</span></div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    def _render_andon_light(is_passed: bool, defect_labels: list[str], board_name: str, latency: float):
+        if is_passed:
+            andon_placeholder.markdown(
+                f"""
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 18px; 
+                            background:rgba(16,185,129,0.12); border:2px solid #10b981; border-radius:10px; margin-bottom:14px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <span style="display:inline-block; width:14px; height:14px; border-radius:50%; background:#10b981; box-shadow:0 0 12px #10b981;"></span>
+                        <strong style="color:#10b981; font-size:1rem; letter-spacing:0.04em;">ANDON TOWER: [ PASS - CONFORMANT ]</strong>
+                        <span style="color:#94a3b8; font-size:0.85rem;">| Bo mạch #{board_name} sạch lỗi, đạt chuẩn chất lượng xuất xưởng.</span>
+                    </div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:0.85rem; color:#10b981; font-weight:bold;">
+                        Latency: {latency:.1f} ms
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            def_str = ", ".join(defect_labels)
+            andon_placeholder.markdown(
+                f"""
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 18px; 
+                            background:rgba(239,68,68,0.12); border:2px solid #ef4444; border-radius:10px; margin-bottom:14px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <span style="display:inline-block; width:14px; height:14px; border-radius:50%; background:#ef4444; box-shadow:0 0 12px #ef4444; animation: pulse 1s infinite;"></span>
+                        <strong style="color:#ef4444; font-size:1rem; letter-spacing:0.04em;">ANDON ALERT: [ REJECT / NG - DEFECTS DETECTED ]</strong>
+                        <span style="color:#fca5a5; font-size:0.85rem;">| Bo mạch #{board_name} phát hiện: <strong>{def_str}</strong></span>
+                    </div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:0.85rem; color:#ef4444; font-weight:bold;">
+                        Latency: {latency:.1f} ms
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # Initial render of stats
+    _render_conveyor_kpis()
+
+    if stream_active and model_ready and conveyor_samples:
+        st.caption("🚀 Băng chuyền đang vận hành liên tục trên GPU...")
+        
+        step_count = 0
+        while step_count < max_stream_boards:
+            if shuffle_boards:
+                curr_sample = random.choice(conveyor_samples)
+            else:
+                sample_idx = (st.session_state["smt_total_scanned"] + step_count) % len(conveyor_samples)
+                curr_sample = conveyor_samples[sample_idx]
+            
+            t0 = time.perf_counter()
+            res = _run_pipeline(str(curr_sample))
+            t_lat = (time.perf_counter() - t0) * 1000.0
+            live_fps = 1000.0 / t_lat if t_lat > 0 else 0.0
+            
+            preds = res.get("predictions", [])
+            is_pass = len(preds) == 0
+            defect_labels = [p["stage2_label"] for p in preds]
+
+            # Update stats
+            st.session_state["smt_total_scanned"] += 1
+            if is_pass:
+                st.session_state["smt_pass_count"] += 1
+            else:
+                st.session_state["smt_defect_count"] += 1
+
+            # Append to history
+            record = {
+                "Time": datetime.datetime.now().strftime("%H:%M:%S"),
+                "Board ID": curr_sample.name,
+                "Status": "PASS" if is_pass else "NG (Lỗi)",
+                "Defects Found": len(preds),
+                "Classes": ", ".join(defect_labels) if defect_labels else "None",
+                "Latency (ms)": f"{t_lat:.1f}",
+            }
+            st.session_state["smt_history"].insert(0, record)
+            if len(st.session_state["smt_history"]) > 20:
+                st.session_state["smt_history"].pop()
+
+            # Render dynamic frames
+            _render_conveyor_kpis(live_fps=live_fps, live_lat=t_lat)
+            _render_andon_light(is_pass, defect_labels, curr_sample.stem, t_lat)
+
+            with live_view_placeholder.container():
+                col_orig, col_det = st.columns(2, gap="medium")
+                with col_orig:
+                    _render_image(res["_original_rgb"], label=f"Live Camera Optical Frame: {curr_sample.name}", icon_name="image")
+                with col_det:
+                    _render_image(res["_annotated_rgb"], label=f"Live AI Bounding Box & Classifications ({len(preds)} defects)", icon_name="search")
+
+            step_count += 1
+            if stream_speed_ms > 0:
+                time.sleep(stream_speed_ms / 1000.0)
+
+    # Render History Log Table
+    if st.session_state["smt_history"]:
+        history_placeholder.markdown('<div class="section-sep"></div>', unsafe_allow_html=True)
+        with history_placeholder.container():
+            _section_heading("list", "Nhật Ký Kiểm Định Dây Chuyền Thời Gian Thực", count=len(st.session_state["smt_history"]))
+            df_hist = pd.DataFrame(st.session_state["smt_history"])
+            st.dataframe(df_hist, width="stretch", hide_index=True)
+    elif not stream_active:
+        live_view_placeholder.markdown(
+            _empty_state(
+                "chip",
+                "Băng chuyền đang ở trạng thái TẠM DỪNG",
+                "Bật công tắc '▶️ Chạy Băng Chuyền' ở phía trên để bắt đầu mô phỏng luồng kiểm định tự động.",
             ),
             unsafe_allow_html=True,
         )
