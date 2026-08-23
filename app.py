@@ -1176,21 +1176,25 @@ button[key^="demo_load_"] {
 
 /* ── Pipeline diagram ── */
 .pipeline-diagram {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr) auto;
-    gap: 0;
+    display: flex;
+    flex-direction: row;
     align-items: stretch;
-    margin: 1.4rem 0;
+    justify-content: space-between;
+    margin: 1.2rem 0;
     border: 1px solid var(--line);
     border-radius: 12px;
-    background: rgba(0,0,0,0.18);
+    background: rgba(0,0,0,0.22);
     overflow: hidden;
 }
 .pipeline-step {
+    flex: 1 1 0;
     padding: 1.1rem 1rem;
     text-align: center;
     position: relative;
-    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
 }
 .pipeline-step:last-of-type { border-right: none; }
 .pipeline-step .num {
@@ -1223,11 +1227,10 @@ button[key^="demo_load_"] {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 .6rem;
+    padding: 0 .8rem;
     color: var(--accent-soft);
-    border-right: 1px solid var(--line);
+    flex-shrink: 0;
 }
-.pipeline-arrow:last-of-type { display: none; }
 .pipeline-arrow svg { stroke-width: 2 !important; }
 
 /* ── Custom scrollbar ── */
@@ -1628,16 +1631,19 @@ with tab_detector:
         label_visibility="collapsed",
     )
 
-    demo_path = st.session_state.get("detector_upload")
-    if demo_path and Path(demo_path).exists():
-        image_path = demo_path
-        uploaded_name = Path(demo_path).name
-    elif detector_file is not None:
+    image_path = None
+    uploaded_name = None
+
+    if detector_file is not None:
         image_path = _save_upload_to_temp(detector_file)
         uploaded_name = detector_file.name
+        # Clear any stored demo sample so uploaded file is active
+        st.session_state["detector_upload"] = None
     else:
-        image_path = None
-        uploaded_name = None
+        demo_path = st.session_state.get("detector_upload")
+        if demo_path and Path(demo_path).exists():
+            image_path = demo_path
+            uploaded_name = Path(demo_path).name
 
     if image_path and model_ready:
         try:
@@ -2393,27 +2399,58 @@ with tab_perf:
         else:
             gradcam_files = sorted(GRADCAM_DIR.glob("*.png"))
             if not gradcam_files:
-                st.info("No GradCAM PNGs available. Run `python gradcam_visualize.py` first.")
+                st.info("Chưa có ảnh GradCAM mẫu. Hãy chạy `python gradcam_visualize.py` để tạo mẫu.")
             else:
-                # Build rows of 2 so odd counts (5, 7, ...) don't leave a
-                # single trailing card hugging the left edge.
+                st.markdown(
+                    f'<p style="color:var(--text-2); font-size:.82rem; margin-bottom:1rem;">'
+                    f'Bộ sưu tập <b>12 ảnh mẫu Grad-CAM 3 khung hình</b> (Vùng cắt gốc | Bản đồ nhiệt JET | Lớp phủ pha trộn 45%) '
+                    f'được trích xuất từ tập kiểm thử cho đầy đủ 6 dạng khuyết tật bo mạch in.</p>',
+                    unsafe_allow_html=True,
+                )
+                
+                # Helper for defect class lookup
+                class_vi_dict = {
+                    "missing_hole": "Thiếu lỗ khoan (missing_hole)",
+                    "mouse_bite": "Gặm mép mạch (mouse_bite)",
+                    "open_circuit": "Hở / Đứt mạch (open_circuit)",
+                    "short": "Đoản mạch / Chập (short)",
+                    "spur": "Gai đồng (spur)",
+                    "spurious_copper": "Đồng thừa (spurious_copper)",
+                }
+                
                 n_cols = 2
                 for row_start in range(0, len(gradcam_files), n_cols):
                     row_files = gradcam_files[row_start : row_start + n_cols]
                     cols = st.columns(n_cols, gap="medium")
                     for col, png in zip(cols, row_files):
+                        # Detect matching defect class from filename
+                        matched_cls = "missing_hole"
+                        for c in class_vi_dict:
+                            if c in png.stem:
+                                matched_cls = c
+                                break
+                        
+                        vi_title = class_vi_dict.get(matched_cls, matched_cls)
+                        
                         with col:
                             st.markdown('<div class="gallery-card">', unsafe_allow_html=True)
                             st.markdown(
-                                f'<div class="gallery-title" title="{png.stem}">{png.stem}</div>',
+                                f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.4rem;">'
+                                f'<span class="defect-badge defect-{matched_cls}">{_icon("defect-" + matched_cls, 12)} {matched_cls}</span>'
+                                f'<span style="font-family:\'JetBrains Mono\', monospace; font-size:.72rem; color:var(--text-3);">{png.name}</span>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+                            st.markdown(
+                                f'<div class="gallery-title" style="font-size:.88rem; font-weight:700;">{vi_title}</div>',
                                 unsafe_allow_html=True,
                             )
                             st.markdown(
                                 f'<div class="gallery-sub">{_icon("fire", 11)} '
-                                f'GradCAM heatmap</div>',
+                                f'Bản đồ nhiệt Grad-CAM 3-Panel (ResNet-18)</div>',
                                 unsafe_allow_html=True,
                             )
-                            st.markdown('<div class="image-frame">', unsafe_allow_html=True)
+                            st.markdown('<div class="image-frame" style="margin-top:.4rem;">', unsafe_allow_html=True)
                             st.image(str(png), width="stretch")
                             st.markdown("</div>", unsafe_allow_html=True)
                             st.markdown("</div>", unsafe_allow_html=True)
@@ -2447,39 +2484,39 @@ with tab_about:
         f'<div class="card">'
         f'<div class="section-heading" style="margin-top:0;">'
         f'<span class="icon-wrap">{_icon("microscope", 14)}</span>'
-        f'<span>PCB Defect Detector</span></div>'
-        f'<p style="color:rgba(255,255,255,0.70); line-height:1.6; margin:0;">'
-        f'A two-stage deep-learning pipeline that locates and classifies manufacturing '
-        f'defects on printed circuit boards.</p>'
+        f'<span>Hệ thống phát hiện & phân loại lỗi bo mạch in (PCB)</span></div>'
+        f'<p style="color:rgba(255,255,255,0.78); line-height:1.6; margin:0; font-size:.88rem;">'
+        f'Hệ thống thị giác máy tính 2 giai đoạn (YOLOv8 + ResNet-18) tích hợp cơ chế giải thích trực quan Grad-CAM, '
+        f'tự động định vị và phân loại 6 dạng khuyết tật bề mặt bo mạch in theo chuẩn quốc tế IPC-A-610 với độ chính xác cao và tốc độ thời gian thực.</p>'
         f'</div>',
         unsafe_allow_html=True,
     )
 
-    # Pipeline diagram (visual)
+    # Pipeline diagram (visual) - STRICTLY 1 ROW
     st.markdown(
         f"""
 <div class="card">
     <div class="section-heading" style="margin-top:0;">
         <span class="icon-wrap">{_icon("pipeline-stage", 14)}</span>
-        <span>How the pipeline works</span>
+        <span>Quy trình hoạt động hệ thống (How the pipeline works)</span>
     </div>
     <div class="pipeline-diagram">
         <div class="pipeline-step">
             <div class="num">1</div>
-            <div class="name">YOLO Detection</div>
-            <div class="desc">Finds candidate defect regions in the PCB image with bounding boxes.</div>
+            <div class="name">1. Định vị YOLO (YOLO Detection)</div>
+            <div class="desc">Quét toàn ảnh bo mạch, khoanh vùng tọa độ Bounding Box các vị trí nghi ngờ lỗi.</div>
         </div>
-        <div class="pipeline-arrow">{_icon("arrow-right", 14)}</div>
+        <div class="pipeline-arrow">{_icon("arrow-right", 16)}</div>
         <div class="pipeline-step">
             <div class="num">2</div>
-            <div class="name">CNN Classification</div>
-            <div class="desc">Classifies each crop into one of six defect categories with confidence.</div>
+            <div class="name">2. Phân loại CNN (CNN Classification)</div>
+            <div class="desc">Cắt vùng lỗi (+25% padding) đưa qua ResNet-18 phân loại chuẩn xác 6 lớp khuyết tật.</div>
         </div>
-        <div class="pipeline-arrow">{_icon("arrow-right", 14)}</div>
+        <div class="pipeline-arrow">{_icon("arrow-right", 16)}</div>
         <div class="pipeline-step">
             <div class="num">3</div>
-            <div class="name">GradCAM (optional)</div>
-            <div class="desc">Visualises which pixels drove the CNN decision, region by region.</div>
+            <div class="name">3. Giải thích Grad-CAM (XAI Visual)</div>
+            <div class="desc">Trực quan hóa bản đồ nhiệt Heatmap thể hiện vùng nơ-ron tập trung để ra quyết định.</div>
         </div>
     </div>
 </div>
@@ -2501,50 +2538,52 @@ with tab_about:
         f'<div class="card">'
         f'<div class="section-heading" style="margin-top:0;">'
         f'<span class="icon-wrap">{_icon("tag", 14)}</span>'
-        f'<span>Defect classes</span></div>'
+        f'<span>6 Dạng khuyết tật bo mạch in (Defect classes)</span></div>'
         f'<p style="margin:0;">{defect_badges_html}</p></div>',
         unsafe_allow_html=True,
     )
 
-    # Tips
+    # Tips (Tiếng Việt có dấu)
     st.markdown(
         f"""
 <div class="card">
     <div class="section-heading" style="margin-top:0;">
         <span class="icon-wrap">{_icon("wand", 14)}</span>
-        <span>Tips</span>
+        <span>Mẹo sử dụng (Tips)</span>
     </div>
-    <ul style="color:rgba(255,255,255,0.70); line-height:1.7; padding-left:1.2rem; margin:0;">
-        <li>Lower the <b>Confidence threshold</b> in the sidebar to catch subtle defects.</li>
-        <li>Use the <b>Detector</b> tab for deep inspection with GradCAM per detection.</li>
-        <li>Use the <b>Gallery</b> tab to compare many boards at once.</li>
+    <ul style="color:rgba(255,255,255,0.78); line-height:1.75; font-size:.84rem; padding-left:1.25rem; margin:0;">
+        <li>Giảm <b>Ngưỡng độ tin cậy (Confidence threshold)</b> ở thanh công cụ bên trái để phát hiện các vết khuyết tật vi mô hoặc vết mờ.</li>
+        <li>Sử dụng tab <b>Kiểm định sâu (Detector)</b> để soi chi tiết từng vùng lỗi với kính lúp số phóng đại, xem bản đồ nhiệt <b>Grad-CAM</b> và bấm xuất <b>Phiếu Kiểm Định QA/QC</b> tiêu chuẩn.</li>
+        <li>Sử dụng tab <b>Băng chuyền (SMT Live Stream)</b> để mô phỏng camera quét luồng tự động 1,069 bo mạch tập Test với tốc độ thời gian thực ~30 FPS trên GPU.</li>
+        <li>Sử dụng tab <b>Bộ sưu tập (Gallery)</b> để tải lên và kiểm tra đồng thời nhiều bo mạch cùng lúc theo lô sản xuất.</li>
     </ul>
 </div>
 """,
         unsafe_allow_html=True,
     )
 
-    # Project layout
+    # Project layout (Fixed structured tree view)
     st.markdown(
         f"""
 <div class="card">
     <div class="section-heading" style="margin-top:0;">
         <span class="icon-wrap">{_icon("folder", 14)}</span>
-        <span>Project layout</span>
+        <span>Cấu trúc mã nguồn dự án (Project layout)</span>
     </div>
-    <pre style="color:rgba(255,255,255,0.78); font-size:.82rem; line-height:1.6; background:rgba(0,0,0,0.30); padding:1rem; border-radius:8px; border:1px solid var(--line); overflow-x:auto; margin:0;">
-app.py                      &lt;- this Streamlit UI
-before_after_slider.py      &lt;- (unused) HTML/JS comparison widget
-gradcam_ui.py               &lt;- per-crop GradCAM helpers
-stage12_yolo_cnn_system.py  &lt;- Stage-1 + Stage-2 inference pipeline
-gradcam_visualize.py        &lt;- offline GradCAM CLI
-stage2_cnn_utils.py         &lt;- model loading &amp; inference utilities
-runs/
-  stage2/                   &lt;- CNN checkpoints (ResNet18/50, EfficientNet-B2)
-  detect/                   &lt;- YOLO checkpoints
-  gradcam/                  &lt;- pre-generated GradCAM PNGs
-  system_eval/              &lt;- error-analysis artifacts
-    </pre>
+    <div style="background:rgba(0,0,0,0.35); padding:1rem 1.2rem; border-radius:8px; border:1px solid var(--line); font-family:'JetBrains Mono', monospace; font-size:.80rem; line-height:1.75; color:rgba(255,255,255,0.85); overflow-x:auto; margin:0;">
+        <div style="color:var(--accent); font-weight:700;">📁 PCB_defect_detection/</div>
+        <div style="padding-left:1.2rem;">├── 📄 <b>app.py</b> <span style="color:var(--text-3); font-size:.76rem;">← Giao diện Web Dashboard Streamlit (Detector, SMT Live, Gallery, Analytics, About)</span></div>
+        <div style="padding-left:1.2rem;">├── 📄 <b>stage12_yolo_cnn_system.py</b> <span style="color:var(--text-3); font-size:.76rem;">← Pipeline suy luận tích hợp 2 giai đoạn (YOLOv8m + ResNet-18)</span></div>
+        <div style="padding-left:1.2rem;">├── 📄 <b>stage2_train.py</b> <span style="color:var(--text-3); font-size:.76rem;">← Huấn luyện CNN Stage 2 (OneCycleLR, Label Smoothing 0.05, Differential LR)</span></div>
+        <div style="padding-left:1.2rem;">├── 📄 <b>stage2_cnn_utils.py</b> <span style="color:var(--text-3); font-size:.76rem;">← Tiện ích nạp mô hình CNN, đếm tham số &amp; đo độ trễ suy luận</span></div>
+        <div style="padding-left:1.2rem;">├── 📄 <b>gradcam_ui.py</b> <span style="color:var(--text-3); font-size:.76rem;">← Module sinh bản đồ nhiệt XAI Grad-CAM cho từng vùng cắt khuyết tật</span></div>
+        <div style="padding-left:1.2rem;">├── 📄 <b>gradcam_visualize.py</b> <span style="color:var(--text-3); font-size:.76rem;">← Công cụ CLI trích xuất Grad-CAM ngoại tuyến</span></div>
+        <div style="padding-left:1.2rem;">├── 📄 <b>evaluate_stage12_system.py</b> <span style="color:var(--text-3); font-size:.76rem;">← Đánh giá toàn hệ thống End-to-End với thuật toán ghép cặp Hungarian Matching</span></div>
+        <div style="padding-left:1.2rem;">├── 📄 <b>compare_stage2_models.py</b> <span style="color:var(--text-3); font-size:.76rem;">← Đánh giá so sánh độc lập 3 kiến trúc CNN (ResNet-18, ResNet-50, EfficientNet-B2)</span></div>
+        <div style="padding-left:1.2rem;">├── 📁 <b>runs/</b></div>
+        <div style="padding-left:2.4rem;">├── 📁 <b>stage2/</b> <span style="color:var(--text-3); font-size:.76rem;">← Checkpoints CNN (resnet18/best.pt, resnet50, efficientnet_b2)</span></div>
+        <div style="padding-left:2.4rem;">└── 📁 <b>detect/</b> <span style="color:var(--text-3); font-size:.76rem;">← Checkpoints YOLOv8 (yolov8m_pcb_768_adamw/best.pt)</span></div>
+    </div>
 </div>
 """,
         unsafe_allow_html=True,
